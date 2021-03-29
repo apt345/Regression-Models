@@ -1,0 +1,873 @@
+---
+title: "Second assignment regression models"
+author: "Arturo Prieto Tirado"
+date: "22/12/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning=FALSE, message=FALSE)
+
+options(repos = c(CRAN = "http://cran.rstudio.com"))
+if (!require(leaps)) install.packages("leaps")
+library("leaps")
+if (!require(MASS)) install.packages("MASS")
+library(MASS)
+if (!require(car)) install.packages("car")
+library(car)
+if (!require(glmnet)) install.packages("glmnet")
+library(glmnet)
+if (!require(ResourceSelection)) install.packages("ResourceSelection")
+library(ResourceSelection)
+if (!require(pscl)) install.packages("pscl")
+library(pscl)
+if (!require(boot)) install.packages("boot")
+library(boot)
+if (!require(statmod)) install.packages("statmod")
+library(statmod)
+if (!require(Epi)) install.packages("Epi")
+library(Epi)
+if (!require(Rcmdr)) install.packages("Rcmdr")
+library(Rcmdr)
+if (!require(caret)) install.packages("caret")
+library(caret)
+
+```
+
+
+
+
+## Exercise 1
+
+We want to model whether a family will buy a new car or not. For that, we introduce a variable $Y=1$ if they will buy a car or $Y=0$ if they won't. We model this in terms of income, $X_1$. The model used is a logistic model, which means that we have a variable ($Y$) that follows a binomial distribution with $P(Y_i=1)=p_i$. The model we want is some $p_i=p_i(\mathbf{X})$, where $\mathbf{X}$ is the matrix of observations of all the predictors (in our case only one predictor). Then, we define 
+
+$$
+\begin{equation}
+\eta_i\equiv\beta_0+\beta_1 X_{i,1}+\beta_2 X_{i,2}+...+\beta_k X_{i,k}\neq p_i
+\end{equation}
+$$
+
+(Note that $X_{0,j}=1$, which is multiplying $\beta_0$ but we omitted it) Since $\eta$ is not bounded between 0 and 1, it cannot be the probability we are searching for. This is why one introduces a link function to make it look like a probability. The one used is the logit function so:
+
+$$
+\begin{equation}
+\eta=\log(\frac{p}{1-p})\rightarrow p=\frac{e^\eta}{1+e^\eta}
+\end{equation}
+$$
+
+Knowing this, we can read the output, which means:
+
+$$
+\begin{equation}
+\eta=-1.98079+0.04342 X_1 \rightarrow p=\frac{e^{-1.98079+0.04342 X_1}}{1+e^{-1.98079+0.04342 X_1}}
+\end{equation}
+$$
+
+The interpretation of the coefficients is the change in the log odds of buying a car for unit change in the income (10k\$). In this case, they increase 0.0432 per unit change, which implies and odd ratio of:
+
+$$
+\begin{equation}
+O_R=e^{\beta_1}=\frac{odds(X_1+1)}{odds(X_1)}=1.04437 \rightarrow 4.4\% \text{ more likely}
+\end{equation}
+$$
+
+The interpretation of the intercept is the log odds of buying a car when the income is 0. So the odds would be $e^{-1.98}=0.138$ and then the probability $p=\frac{0.138}{1+0.138}=0.12$
+
+Next question we are asked is to calculate a 95\% confidence interval for the probability that a family with annual income of 60 thousand dollars will purchase a new car next year.
+
+Since the parameter $\beta_{1}$ is estimated using Maxiumum Likelinood Estimation, MLE theory tells us that it is asymptotically normal and hence we can use the large sample confidence interval to get the usual
+$$
+\beta_{1} \pm z^{*} S E\left(\beta_{1}\right)
+$$
+Which gives a confidence interval on the log-odds ratio. Using the invariance property of the MLE allows us to exponentiate to get
+$$
+e^{\beta_{1} \pm z^{*} S E\left(\beta_{1}\right)}
+$$
+which is a confidence interval on the odds ratio. Note that these intervals are for a single parameter only. Remember that if we want a 95\% confidence interval, we should take the gaussian quantile $z^*=1.96$.
+
+
+The logistic model gives an estimation of the probability of observing $Y=1$ and we aim to construct a frequentist interval around the true probability $p$ such that $\operatorname{Pr}\left(p_{L} \leq p \leq p_{U}\right)=.95$
+One approach called endpoint transformation does the following:
+
+Compute the upper and lower bounds of the confidence interval for the linear combination $x^{T} \beta$ (using the previously derived CI)
+- Apply a monotonic transformation to the endpoints $F\left(x^{T} \beta\right)$ to obtain the probabilities.
+Since $\operatorname{Pr}\left(x^{T} \beta\right)=F\left(x^{T} \beta\right)$ is a monotonic transformation of $x^{T} \beta$
+$$
+\left[\operatorname{Pr}\left(x^{T} \beta\right)_{L} \leq \operatorname{Pr}\left(x^{T} \beta\right) \leq \operatorname{Pr}\left(x^{T} \beta\right)_{U}\right]=\left[F\left(x^{T} \beta\right)_{L} \leq F\left(x^{T} \beta\right) \leq F\left(x^{T} \beta\right)_{U}\right]
+$$
+
+Concretely this means computing $\beta^{T} x \pm z^{*} S E\left(\beta^{T} x\right)$ and then applying the logit transform to the result to get the lower and upper bounds:
+$$
+\operatorname{C.I. (Prob)}=\left[\frac{e^{x^{T} \beta-z^{*} S E\left(x^{T} \beta\right)}}{1+e^{x^{T} \beta-z^{*} S E\left(x^{T} \beta\right)}}, \frac{e^{x^{T} \beta+z^{*} S E\left(x^{T} \beta\right)}}{1+e^{x^{T} \beta+z^{*} S E\left(x^{T} \beta\right)}}\right]
+$$
+
+The estimated approximate variance of $x^{T} \beta$ can be calculated using the covariance matrix of the regression coefficients using
+$$
+\operatorname{Var}\left(x^{T} \beta\right)=x^{T} \Sigma x \rightarrow \operatorname{S.E.}(x^T\beta)=\sqrt{x^T\Sigma x}
+$$
+
+Therefore, in our case, the covariance matrix is given by the output and $x=(1, 60)$ since the 0-th element is always 1 and we want the income to be 60k\$ Also, we know that $\beta=(-1.98079,0.04342)$. So, we can simply substitute to find the desired CI for the probability. We find a standard error of 0.375 which leads to:
+
+$$
+\begin{equation}
+\operatorname{C.I._{0.95} (Prob)}=\left[0.36, 0.86\right]
+\end{equation}
+$$
+
+Finally, if we had to check the goodness of fit of the model with 6 groups we will use the residual deviance, that we know follows a chi squared distribution with $n-k-1$ degrees of freedom, 31 in our case. We don't need the Hosmer test. 
+
+$$
+\begin{equation}
+D\sim\chi^2_{n-k-1}
+\end{equation}
+$$
+
+## Exercise 2
+
+Low birth weight is a binary variable with values 0 (more than 2500g) or 1 (less than 2500g). We want to predict it as a function of the age and weight of the mother (continuous variables), her race (categorical with 1=White, 2=Black, 3=Other) and if she smoked during pregnancy (1=yes, 0=no). We'll use logistic regression.
+```{r}
+X=birthwt[,1:5]
+
+X$low=as.factor(X$low)
+
+#define categorical variables as factor
+X$race=as.factor(X$race)
+X$smoke=as.factor(X$smoke)
+low=as.factor(X["low"])
+predictors=X[,2:5]
+
+#fit the best model using AIC and LRT with interactions
+
+#general model with full interactions
+#fmla <- as.formula(paste("low ~ ", paste(colnames(predictors), collapse= "*")))
+
+#just one to one interactions
+fmla="low ~ age+lwt+race+smoke+age:lwt+age:race+age:smoke+lwt:race+lwt:smoke+race:smoke"
+
+logisticmodel=glm(fmla, family=binomial, X)
+
+summary(logisticmodel)
+```
+
+
+We can see that none of them is really significative, so we will use stepAIC to optimize in terms of the AIC and get rid of the non-important ones.
+
+```{r}
+AICmodel=stepAIC(logisticmodel, direction="both", trace=FALSE)
+
+summary(AICmodel)
+
+#we find the best AIC model in the last iteration
+
+
+#we can also do it in terms of LRT (likelihood ratio test)
+```
+
+We can see that the AIC has been reduced from 240.21 to 225.01 and that we find the best model to be only low ~ lwt + race + smoke. Now we would like to check this result with Likelihood Ratio Test in order to see if the possible changes (adding new variables or removing one of the ones already in the model) are significative. We will do so using the chi squared test in anova:
+
+```{r}
+#we just found that the best model is lwt+race+smoke
+#compare adding any of the other possible variables/interactions or removing with anova
+
+
+#ANOVA (first position null hypothesis (best model), second position, alternate hypothesis)
+bestmodel=glm(low~ lwt+race+smoke, family=binomial, X)
+
+#Is adding lwt interaction with smoke significant?
+
+altmodel1=glm(low~ lwt+race+smoke+lwt:smoke, family=binomial, X)
+
+anova(bestmodel, altmodel1, test="Chisq")
+
+#Is adding age significant?
+
+altmodel2=glm(low~ lwt+race+smoke+age, family=binomial, X)
+
+anova(bestmodel, altmodel2, test="Chisq")
+
+#Is adding race interaction with smoke significant?
+
+altmodel3=glm(low~ lwt+race+smoke+race:smoke, family=binomial, X)
+
+anova(bestmodel, altmodel3, test="Chisq")
+
+#Is adding lwt interaction with race significant?
+
+altmodel4=glm(low~ lwt+race+smoke+lwt:race, family=binomial, X)
+
+anova(bestmodel, altmodel4, test="Chisq")
+
+
+
+#Is lwt significant?
+
+anova(update(bestmodel,.~.-lwt), bestmodel, test="Chisq")
+
+#Is  race significant?
+
+anova(update(bestmodel,.~.-race), bestmodel, test="Chisq")
+
+
+#Is smoke significant?
+
+anova(update(bestmodel,.~.-smoke), bestmodel, test="Chisq")
+
+
+
+```
+
+We can see that adding new variables or interactions is not significant. In the case of simplifying the model even more, we can see that the three variables do make a significant difference in reducing the residual deviance compared with the model with only two variables. So, we conclude that the model is also optimal in terms of LRT.
+
+
+
+Now, we are asked to use hoslem test with 10 groups to check the goodness of fit.
+
+```{r}
+class(X$low)
+blabla=glm(low~lwt + race + smoke, family=binomial, X)
+a=predict(blabla,type="response")
+hoslem.test(birthwt$low, a, g=10)
+```
+
+Given the large p-value, we conclude that the goodness of fit is good.
+
+Next step is to check the model assumptions using residual plots. We will use the function glm.diag.plots() in the package boot.
+
+```{r}
+#The function glm.diag.plots() in the package boot
+
+par(mfrow=c(2,2))
+glm.diag.plots(AICmodel)
+
+```
+
+From the first plot we can see that there are non-linearities. From the second one, that is close to a normal but not completely, which might indicate some problems because the deviance residuals should be close to a normal. From the third and the fourth, we see that there is one observation that is an outlier. 
+
+In the case of binary data, the qqplot does not make sense. The plot of the
+Cook’s distance is similar to the one in linear regression, so the problematic
+points are the ones above the horizontal and to the right of the vertical lines.
+In this case is better to use rQ (package statmod)
+
+
+```{r}
+
+par(mfrow=c(2,2))
+plot(X$lwt,qres.binom(AICmodel), xlab="Lwt",ylab="Quantile residuals")
+plot(X$race,qres.binom(AICmodel), xlab="Race",ylab="Quantile residuals")
+plot(X$smoke,qres.binom(AICmodel), xlab="Smoke",ylab="Quantile residuals")
+qqnorm(qres.binom(AICmodel))
+abline(a=0,b=1,col="red")
+
+```
+
+We can see that the variables are linear but we saw before that there are non-linearities in the residuals. This might be an indication that we are hidden interactions that we didn't include in the model.
+
+
+Finally, we will analyze the predictive power of the model using roc curves with the ROC() function in the package Epi.
+
+
+```{r}
+
+#The ROC function
+ROC(form=low ~ lwt + race + smoke, data=birthwt,plot="ROC",lwd=3,cex=1.5)
+
+```
+
+We see that the area under the curve=0.675, which means that our model is acceptable. We can calculate the predictive power using a confusion matrix. We predict the response and associate it with low=0 if smaller than 0.5 and with low=1 if greater than 0.5 (one could use another number instead of 0.5 if wanting to switch to more specificity or sensitivity).
+
+```{r}
+
+prediction=predict(AICmodel, newdata = X, type="response")
+prediction[prediction>0.5]=1
+prediction[prediction<0.5]=0
+prediction=as.factor(prediction)
+confusionMatrix(prediction,X$low)
+
+```
+
+We see that the general accuracy is 0.69\% so the error rate is around 30\%.
+
+
+What are the characteristics of the mothers with higher probability of having babies with low birth weight?, what is the characteristic that has the highest impact on the predicted probability?
+
+Looking at the coefficients, lwt is negative and race and smoke positive, so the characteristics of women with highest probability are women whose weight is low, black and smokers. Smoking has the highest coefficient of all of them, 1.074 versus 0.503 for race and -0.011 per unit change in lwt. The minimum and maximum of lwt are 80 and 250, so only on the very extreme cases its impact will be higher than smoking.
+
+
+
+
+## Exercise 3
+
+
+We want to find the best logistic regression model with sex and weight only (allowing interactions). We find it in terms of AIC and find that the best model is just g02~ sex+weight+sex:weight.
+
+```{r}
+#best logistic regression model with sex and weight only
+health= read.table(file = "./Datasets_Chapter5/health.txt", header = TRUE)
+
+health$sex=factor(health$sex)
+
+logisticmodelsexweight=glm(g02 ~ sex+weight+sex:weight, family=binomial, health)
+
+AICmodelhealth=stepAIC(logisticmodelsexweight, direction="both", trace=FALSE)
+
+#the full model is the best model just as it is
+```
+
+
+Now, we want to use a LRT to test if the terms in the model are significant. We use again the Anova function with the chi squared test.
+
+```{r}
+
+#use LRT to test if the terms in the model are significant
+
+#first, check if the interaction is significant
+
+modelinteraction=glm(g02 ~ sex+weight, family=binomial, health)
+
+anova(logisticmodelsexweight,modelinteraction, test="Chisq")
+#afterwards, check each individual term
+
+#check if weight is significant
+
+modelweight=glm(g02 ~ sex, family=binomial, health)
+
+anova(logisticmodelsexweight,modelweight, test="Chisq")
+#check if sex is significant
+modelsex=glm(g02 ~ weight, family=binomial, health)
+anova(logisticmodelsexweight,modelsex, test="Chisq")
+
+#all of them are significant
+```
+
+
+We find that all of the terms are significant. Next step is to interpret the coefficients in terms of odds ratios, so we take the exponential and find:
+
+```{r}
+#Calculate the odds ratio
+exp(coef(logisticmodelsexweight))
+
+```
+
+This results mean the change in the log odds of feeling well for unit change in the variables. We can see that women (sex=2, while men have sex=1) are more than 3 times more likely to feel well than males. Also, weighing more makes you slightly less prone to feeling well (1\% per kg) and even less if you are women because the odds ratio of the interaction is less than 1. 
+
+
+Plot the predicted probabilities for males and females versus weight
+
+```{r}
+#Repeat the plot for fitted probabilities
+# Obtain fitted linear probabilities
+fittedp=predict(logisticmodelsexweight, type="response")
+#Plot probailities for males and females
+plot(health$weight,fittedp,type="n",main="Probability Sex+Weight+Sex:Weight ",xlab="Weigth",ylab="Probability")
+#Get weights and probabilities for males
+weight2=health$weight[health$sex==1]
+p1=fittedp[health$sex==1]
+#Order according to weight
+o=order(weight2)
+lines(weight2[o],p1[o],col=2,t='l')
+#Get ages and probabilities for females
+weight2=health$weight[health$sex==2]
+p2=fittedp[health$sex==2]
+#Order according to age
+o=order(weight2)
+lines(weight2[o],p2[o],col=4,t='l')
+legend(35,0.65, col=c(2,4),c("male","female"), lty=1, bty="n",cex=0.8)
+############################################
+
+
+```
+
+We can see that there is a general tendency of feeling worse with higher weight, as expected because of the coefficient for weight. Furthermore, there is a clear distinction on higher weights between males and females. Heavier women tend to feel worse than heavier men, which was expected due to the interaction term odds ratio being 0.97. For very low weights, women feel the best (there are no men for such low weights). 
+
+
+Given that a person has weight = 75kg, what is the relative risk and odds ratio of self-perceived good health of a female compared with a male? We can calculate this with R:
+
+```{r}
+#Calculate the probability of self-preceived good health for females both 75 kg 
+p1=predict(logisticmodelsexweight,newdata=data.frame(sex="2", weight=75),type="response")
+#Calculate the probability of self-preceived good health for males.  
+p2=predict(logisticmodelsexweight,newdata=data.frame(sex="1", weight=75),type="response")
+
+##Relative Risk
+p1/p2
+# Odds ratio of feeling better between men and woman
+(p1/(1-p1))/(p2/(1-p2))
+############################################
+
+
+```
+
+Both quantities indicate that the probability of feeling well for the 75kg woman are smaller than those for the 75kg man.
+
+Calculate the estimated expected probability of females of 70kg and 110kg and give a confidence interval for the prediction. We can do this implementing the same concepts of the C.I. in exercise 1 in R: obtaining the following results:
+
+```{r}
+p70=predict(logisticmodelsexweight,newdata=data.frame(sex="2", weight=70),type="response", se.fit=TRUE)
+
+#Calculate lower limit of C.I. for probability by transforming lower limit of C.I. of logit
+L.inf=with(p70,exp(fit-1.96*se.fit)/(1+exp(fit-1.96*se.fit)))
+L.sup=with(p70,exp(fit+1.96*se.fit)/(1+exp(fit+1.96*se.fit)))
+
+print(paste(c("Probability for female of 70 kg is: "), exp(p70[[1]])/(exp(p70[[1]])+1)))
+print(paste(c("CI for female 70 kg is: ", L.inf, L.sup)))
+
+p110=predict(logisticmodelsexweight,newdata=data.frame(sex="2", weight=110),type="response", se.fit=TRUE)
+
+#Calculate lower limit of C.I. for probability by transforming lower limit of C.I. of logit
+L.inf=with(p110,exp(fit-1.96*se.fit)/(1+exp(fit-1.96*se.fit)))
+L.sup=with(p110,exp(fit+1.96*se.fit)/(1+exp(fit+1.96*se.fit)))
+
+
+print(paste(c("Probability for female of 110 kg is: "), exp(p110[[1]])/(exp(p110[[1]])+1)))
+print(paste(c("CI for female 110 kg is: ", L.inf, L.sup)))
+
+```
+
+
+
+## Exercise 4
+
+The goal is to find best model for g02 in health dataset using AIC, BIC and LRT criteria.
+
+
+```{r}
+health= read.table(file = "./Datasets_Chapter5/health.txt", header = TRUE)
+health$drink=factor(health$drink)
+health$sex=factor(health$sex)
+health$educa=factor(health$educa)
+health$con_tab=factor(health$con_tab)
+health$year=factor(health$year)
+
+
+predictorshealth=health[,-3]#remove g01
+
+predictorshealth=predictorshealth[,-2] #remove g02
+
+
+
+
+
+#fmla <- as.formula(paste("g02 ~ ", paste(colnames(predictorshealth), collapse= "*")))
+
+fmla=as.formula("g02~sex+weight+height+con_tab+year+educa+imc+drink+age+
+                sex:weight+sex:height+sex:con_tab+sex:year+sex:educa+sex:imc+sex:drink+sex:age+
+                weight:height+weight:con_tab+weight:year+weight:educa+weight:imc+weight:drink+weight:age+
+                height:con_tab+height:year+height:educa+height:imc+height:drink+height:age+
+                con_tab:year+con_tab:educa+con_tab:imc+con_tab:drink+con_tab:age+
+                year:educa+year:imc+year:drink+year:age+
+                educa:imc+educa:drink+educa:age+
+                imc:drink+imc:age+
+                drink:age")
+
+logisticmodelhealth=glm(fmla, family=binomial, health)
+
+```
+
+The following model is obtained using AIC criterion.
+```{r}
+#Using AIC
+
+AICmodelhealth=stepAIC(logisticmodelhealth, direction="both", trace=FALSE)
+
+summary(AICmodelhealth)
+
+
+```
+
+The best AIC model is g02 ~ sex + weight + height + con_tab + year + educa + imc + 
+    drink + age + sex:weight + sex:imc + weight:height + weight:drink + 
+    height:con_tab + con_tab:imc + year:imc + year:age + drink:age
+
+
+
+The following code model is based on BIC:
+
+
+```{r}
+opt_step=stepwise(logisticmodelhealth, direction = "forward/backward", criterion = "BIC", trace = FALSE)
+summary(opt_step)
+```
+
+Best BIC model g02 ~ sex + educa + imc + drink + age
+
+
+
+
+Finally, using LRT we get that the model is:
+
+```{r}
+
+#### Likelihood-ratio-test based selection:
+
+# The first variables will 
+formula_glm_vector = c("weight","height","con_tab","year","educa","imc","drink","age",
+"sex:weight","sex:height","sex:con_tab","sex:year","sex:educa","sex:imc","sex:drink","sex:age",
+"weight:height","weight:con_tab","weight:year","weight:educa","weight:imc","weight:drink","weight:age",
+  "height:con_tab","height:year","height:educa","height:imc","height:drink","height:age",
+  "con_tab:year","con_tab:educa","con_tab:imc","con_tab:drink","con_tab:age",
+  "year:educa","year:imc","year:drink","year:age",
+  "educa:imc","educa:drink","educa:age",
+  "imc:drink","imc:age",
+  "drink:age")
+
+# Initializing the formula
+formula_glm1 = paste("g02 ~ ", "sex")
+
+for (i in 1:length(formula_glm_vector)){
+  # Fitting the first model 
+  model1 = glm(formula = as.formula(formula_glm1), family = binomial, data = health)
+  # Adding the i-th term to the formula
+  formula_glm2 = paste(c(formula_glm1,formula_glm_vector[i]), collapse = "+")
+  # Fitting the second model with this new term
+  model2 = glm(formula = as.formula(formula_glm2), family = binomial, data = health)
+  # Anova between these two models: take the p-value
+  anova_result = anova(model1,model2, test="Chisq")$`Pr(>Chi)`[2]
+  # Only if p-value < 0.05, then we keep the new variable in the model
+  if(anova_result <= 0.05){
+    formula_glm1 = formula_glm2
+  }
+  # The final model will be given by the remaining formula: formula_glm1
+}
+print("The best model in LRT is: ")
+formula_glm1
+
+```
+
+We can clearly see that the obtained models differ. So, which one to choose? We can choose the one with less deviance, that is, the AIC model. Finally, we analyze its predictive power with the ROC function:
+
+```{r}
+
+#The ROC function
+ROC(form=g02 ~ sex + weight + height + con_tab + year + educa + imc + 
+    drink + age + sex:weight + sex:imc + weight:height + weight:drink + 
+    height:con_tab + con_tab:imc + year:imc + year:age + drink:age, data=health,plot="ROC",lwd=3,cex=1.5)
+
+```
+
+The area under the curve is 0.734 so it's an acceptable model.
+
+## Exercise 5
+
+We saw in class that the model with type, region and interaction was lacking goodness of fit maybe because property was not included or maybe because of overdispersion. So, we will start by fitting a poisson model including type, region, property and their interactions and do a goodness of fit test. If that didn't go well, we could check for overdispersion.
+
+```{r}
+#campus crime page 115 (9) of chapter 6
+crime <- read.table(file = "Campus_Crime.txt", header = TRUE)
+
+```
+
+```{r}
+modelpoissonsimple = glm(Violent~Type+Region+Property+Type:Region+Type:Property+Region:Property,family=poisson,offset=log(Enrollment),data=crime)
+summary(modelpoissonsimple)
+
+```
+
+We can see that property itself is not significant, but its interactions with some regions or type of university are very significant. Let's analyze the goodness of fit:
+
+```{r}
+#Pearson's chi-squared statistic
+pchisq(modelpoissonsimple$deviance,modelpoissonsimple$df.residual,lower.tail=FALSE)
+
+```
+
+This low value indicates that the model doesn't fit well, probably due to overdispersion. Let's then try a quasipoisson model and a negative binomial one.
+
+```{r}
+modeli = glm(Violent~Type+Region+Property+Type:Region+Type:Property+Region:Property,family=quasipoisson, offset=log(Enrollment),data=crime)
+summary(modeli)
+
+```
+
+Since the dispersion parameter is 5.54$>>1$, there is overdispersion. Let's try with the negative binomial:
+
+
+```{r}
+#Negative Binomial Model
+#Now the offset is passed as weights
+modelbinomialcomplete = glm.nb(Violent~Type+Region+Property+Type:Region+Type:Property+Region:Property, weights=offset(log(Enrollment)),link=log,data=crime)
+summary(modelbinomialcomplete)
+
+
+```
+
+We obtain that several variables are now significant at .05 confidence level. We can see that, compared to the quasipoisson, most of the coefficients have similar values and sign, but the standard errors of the negative binomial are smaller, which is better. Therefore, I would choose the negative binomial model as the model of this crime dataset. However, the different results obtained with quasipoisson and negative binomial motive the search for new predictors or more data.
+
+Finally, let's interpret the parameters of the negative binomial. Remember that the dependent variable is a counting variable that has overdispersion, and the model models the log of the expected count as a function of the predictor variables. We can interpret the negative binomial regression coefficients as the difference in the logs of expected counts of the response variable for one unit change in the predictor variable, given that the other predictor variables in the model are held constant. If we take the exponential, we find the odds ratio:
+
+```{r}
+
+# parameter interpretation
+exp(coef(modelbinomialcomplete))
+
+```
+
+Where we can see that it is 3.5 times more likely to be a violent crime event if in the NE region while it is 62\% less likely to happen in the West region. Also, violent crime is slightly more probable to happen if there have been property crimes in the area. Similar conclusions can be found for all the rest of the coefficients.
+
+
+## Exercise 6
+
+Let's start by fitting the Poisson model with interactions (excluding interaction between excellent and poor self perceived health because one is the opposite of the other):
+
+```{r}
+
+physician= read.table(file = "./Datasets_Chapter6/dt.csv", header = TRUE, sep=",")
+
+#code categorical variables as factors
+#plot(table(physician$ofp))
+
+physician$gender=factor(physician$gender)
+physician$privins=factor(physician$privins)
+physician$health_excellent=factor(physician$health_excellent)
+physician$health_poor=factor(physician$health_poor)
+
+```
+
+
+```{r}
+varnames = colnames(physician)
+# We delete ofp
+varnames = varnames[-1]
+
+# Formula allowing only interaction between two variables 
+double_formula = c()
+for (i in 1:(length(varnames))){
+  for (j in 1:(length(varnames))){
+    if(i<j){
+      double_formula = c(double_formula, paste(c(varnames[i], varnames[j]), collapse = ":"))  
+    }
+  }
+}
+
+#remove health_excellent:health_poor
+double_formula=double_formula[-length(double_formula)]
+
+formula = as.formula(paste("ofp ~ ", paste(c(varnames, double_formula), collapse = "+")))
+
+print(formula)
+
+```
+
+
+```{r}
+
+modelpoisson = glm(formula,family=poisson,data=physician) #no offset
+summary(modelpoisson)
+
+```
+
+
+We take the exponential for the interpretation of the coefficients:
+
+```{r}
+# parameter interpretation
+exp(coef(modelpoisson))
+
+```
+
+
+The intercept represents the events expected where all the other variables are 0, so 2.7 events. The other exponential of the coefficients represent the change in the odds per unit change. We see that hospital stays and the chronic conditions increase the likelihood in 12 and 30\%, respectively. Being woman reduces by 33\% and both number of years of education and private insurance increase the likelihood by 1.1\% per year of education and 15\% for people with private insurance. On the other hand, the self perceived excellent or poor health follow the intuitive tendency of greatly diminishing and increasing the likelihood. In the case of excellent, it reduces it by almost 55\% while in the case of poor health, it increases it up to 2.43 times more likely. Finally, we can look at all the interactions and see how they increase or decrease the odds. Since there are many, I will only comment one of them since the interpretation of the others is done analogously. In the case of gender1:school, this tells us that it is 1.4\% more likely per unit change years of education that the person goes to the physician given that they are female.
+
+
+And check the goodness of fit.
+```{r}
+#Goodness of fit test
+gof.ts = modelpoisson$deviance
+gof.pvalue = 1 - pchisq(gof.ts, modelpoisson$df.residual)
+gof.pvalue
+
+modelpoisson$df.residual
+```
+Almost all covariates are statistically significant, but a goodness-of-fit test reveals
+that there remains significant lack-of-fit. This lack-of-fit may be explained by
+the presence of people that have no interest in going to the physician, for different reasons.
+
+
+We predict zero 0s. Let's compare the distributions.
+
+```{r}
+
+realzeros=sum(physician$ofp==0) #683 zeros
+
+predictedpoisson=predict(modelpoisson, newdata=physician[,2:8], type="response")
+
+
+predictedzeros=sum(predictedpoisson==0) #no zeros
+
+hist(physician$ofp)
+hist(predictedpoisson)
+```
+
+There are way more zeros in the data than what we predict. This can be due to the fact that going to the physician is expensive (or increases the amount you pay next year to your insurance) and therefore people don't go if it is not necessary. We can solve this with a zero inflated poisson model.
+
+
+So now we estimate the zero-infated Poisson regression model to predict the number of physician office visits. Using all of the explanatory variables for the log(mu) part of the model and no explanatory variables in the phi part of the model (the proportion that never goes to the physician). 
+
+
+```{r}
+
+# ZIP Model with Predictors only for mu part. A simple inflation model where all zero counts have the same probability of belonging to the zero component can by specified by the formula phi=1
+
+inflatedmodel=zeroinfl(ofp ~ hosp + numchron + gender + school + privins + health_excellent + 
+    health_poor + hosp:numchron + hosp:gender + hosp:school + 
+    hosp:privins + hosp:health_excellent + hosp:health_poor + 
+    numchron:gender + numchron:school + numchron:privins + numchron:health_excellent + 
+    numchron:health_poor + gender:school + gender:privins + gender:health_excellent + 
+    gender:health_poor + school:privins + school:health_excellent + 
+    school:health_poor + privins:health_excellent + privins:health_poor |1  , data=physician)
+summary(inflatedmodel)
+
+```
+
+
+For interpretation we would need to take into account the different models of the mu part (poisson) and the phi part (binomial with logit link). Let's take the exponential.
+
+```{r}
+# parameter interpretation
+exp(coef(inflatedmodel))
+
+```
+
+
+We now distinguish between the mu part and the phi part. The mu part is a poisson process, so counts the events. The intercept represents the events expected where all the other variables are 0, so 3.7 events. The other exponential of the coefficients represent the change in the odds per unit change. We see that hospital stays and the chronic conditions increase the likelihood in 5.7 and 2\%, respectively. Being woman reduces by 20\% and both number of years of education and private insurance increase the likelihood by 1.3\% per year of education and 12\% for people with private insurance. On the other hand, the self perceived excellent or poor health follow the intuitive tendency of greatly diminishing and increasing the likelihood. In the case of excellent, it reduces it by almost 50\% while in the case of poor health, it increases it up to 2.26 times more likely. Finally, we can look at all the interactions and see how they increase or decrease the odds. Since there are many, I will only comment one of them since the interpretation of the others is done analogously. In the case of count_hosp:privins1, this tells us that it is 12\% more likely per unit change in hospital stays that the person goes to the physician given that they have a private insurance.
+
+On the other hand, the zero intercept is related to the probability of being a true zero (those people that don't go to the physician because they don't want to pay or whatever). In particular we know that $0.17=\frac{\phi}{1-\phi}\rightarrow \phi=0.145$ so there is a proportion of 14.5\% true zeros.
+
+
+Now only estimate the phi part
+
+
+```{r}
+
+# ZIP Model with Predictors only for phi part. 
+inflatedmodelphi=zeroinfl(ofp ~ 1 | hosp + numchron + gender + school + privins + health_excellent + 
+    health_poor + hosp:numchron + hosp:gender + hosp:school + 
+    hosp:privins + hosp:health_excellent + hosp:health_poor + 
+    numchron:gender + numchron:school + numchron:privins + numchron:health_excellent + 
+    numchron:health_poor + gender:school + gender:privins + gender:health_excellent + 
+    gender:health_poor + school:privins + school:health_excellent + 
+    school:health_poor + privins:health_excellent + privins:health_poor , data=physician)
+summary(inflatedmodelphi)
+
+```
+
+Interpret coefficients:
+
+```{r}
+# parameter interpretation
+exp(coef(inflatedmodelphi))
+
+```
+
+Now it is the other way around, we just took the expected number of people not accounting for any of the other variables, getting 6.82 in the mu part of the model and have all the details in the proportion of true zeros part of the model. The zero intercept represents the odds of true zero while all the other variables are 0, being $\phi=0.39$. We can interpret the other odd ratios analogously as before, just that they know account for the odds of being true zero instead of the event counts. We see that hospital stays and chronic conditions diminish the chances, which makes sense because those people would go to the doctor since intuitevely they are more likely to have health issues. We see that females are almost twice more likely to not go to the physician when they should. On the other hand, we see that unit change in years of education leaves the chances more or less equal, as well as having or not private insurance. Contrary to the mu case, as expected, perceiving ourselves in excellent health conditions leads people to not go to the physician when they should and the opposite for people with poor self perceived health.
+
+
+We now compare the models using LRT and see that there is no difference.
+
+```{r}
+
+
+# likelihood ratio test
+lrt <- 2*(inflatedmodel$loglik-inflatedmodelphi$loglik)
+df=inflatedmodel$df.residual-inflatedmodelphi$df.residual
+1-pchisq(lrt,df)
+
+
+```
+
+
+
+
+Finally, we want to examine how well each model estimates the number of zero counts. In order to do that, we can predict the probabilities of each event being classified as 0, 1, 2, 3, ..., 89. We can see the number of zeros as:
+
+$$
+\begin{equation}
+\# 0=\sum_i p(0)_i
+\end{equation}
+$$
+
+Such that if the probability of one event being 0 is 1, we sum an event or we just sum the fractional part according to its probability. It is then immediate to see that, for a total number of events $n$:
+
+$$
+\begin{equation}
+\frac{\# 0}{n}=\frac{\sum_i p(0)_i}{n}=\hat{p}(0)
+\end{equation}
+$$
+
+So if we want the predicted number of zeros, we just need to take the average zero probability and multiply by the number of events:
+
+$$
+\begin{equation}
+\# 0=n\hat{p}(0)
+\end{equation}
+$$
+
+This approach has been implemented in R for the previous models, getting very close results to the actual zero values.
+
+```{r}
+
+predictedinflatedmu=predict(inflatedmodel, newdata=physician, type="prob")
+
+#take the mean over all probabilities to have mean(prob(0)), mean(prob(1)), etc and multiply by total number of people to know the distribution
+#colMeans(predictedinflatedmu)
+
+
+proportionsmu=colMeans(predictedinflatedmu)*4406
+
+#sum(proportionsmu) #it sums exactly 4406 events, no problem
+
+names(proportionsmu)=strsplit(toString(0:89), ",")[[1]]
+
+print("The number of predicted zeros by the mu model is")
+
+proportionsmu[1]#number of zeros
+
+
+#for predictions, if we don't type=anything (or type=response) it takes the probability of being 0,1,2,3 etc and response=0*prob(0)+1*prob(1)+2*prob(2)+3*prob(3) and so on (the mean, that will never be exactly 0)
+```
+
+
+
+
+```{r}
+
+predictedinflatedphi=predict(inflatedmodelphi, newdata=physician[,2:8], type="prob")
+
+
+#colMeans(predictedinflatedphi)
+
+
+proportionsphi=colMeans(predictedinflatedphi)*4406
+
+#sum(proportionsphi)#it sums exactly 4406 events, everything ok
+
+names(proportionsphi)=strsplit(toString(0:89), ",")[[1]]
+
+print("The number of predicted zeros by the phi model is")
+proportionsphi[1]#number of zeros
+
+
+print("The number of original zeros is")
+sum(physician$ofp==0)
+
+
+```
+
+
+
+We can compare the distributions and see that we are still far from predicting the whole picture accurately. Maybe using the predictors for both the mu and the phi part of the model could help.
+
+```{r}
+
+distributionphi=c()
+distributionmu=c()
+for(i in(0:89)){
+  a=rep(i, times=proportionsphi[i+1])
+  b=rep(i, times=proportionsmu[i+1])
+
+  distributionphi=append(distributionphi, a)
+  distributionmu=append(distributionmu, b)
+}
+hist(physician$ofp)
+hist(distributionmu)
+hist(distributionphi)
+```

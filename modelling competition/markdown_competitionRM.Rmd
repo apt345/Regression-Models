@@ -1,0 +1,1160 @@
+---
+title: "Modelling competition"
+author: "Ilán Carretero, Pere Fuster, Arturo Prieto, Sofía Sorbet Santiago"
+date: "10/1/2021"
+output: html_document
+---
+
+<style type="text/css">
+  body{
+  font-size: 8.5pt;
+}
+</style>
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning=FALSE, message=FALSE)
+```
+
+```{r message=FALSE, warning=FALSE, paged.print=FALSE}
+# Loading the required libraries
+library(readxl)
+library(ggplot2)
+library(MASS)
+library(dbplyr)
+library(corrplot)
+library(readr)
+library(writexl)
+library(gridExtra)
+library(plotly)
+library(rrcov)
+library(factoextra)
+library(plotrix)
+library(tidyverse)
+library(caret)
+library(VGAM)
+library(MLmetrics)
+library(Epi)
+library(pscl)
+library(RcmdrMisc)
+library(sjPlot)
+library(statmod)
+library(boot)
+library(ResourceSelection)
+library(multcomp)
+library(glmnet)
+library(mgcv)
+library(ggpubr)
+library(gtools)
+library(fmsb)
+```
+
+## Introduction
+
+
+
+For banks, it is vitally important to predict whether a customer will repay their credit or not, as this can make the difference between a substantial profit or loss. The database provided for this project contains information about a bank's clients. The idea is to use them to predict whether or not a certain customer poses a risk of monetary loss for the bank. Furthermore, the ideal would be to be able to obtain this information using the minimum number of variables possible. Different models will be trained and compared using different evaluative metrics, such as the AUC. However, it should be borne in mind that from a bank's perspective a false positive is not the same as a false negative, assuming greater losses from being classified as a good customer when in reality you were a bad one, than vice versa. Therefore, the number of false positives and the sensitivity will be especially important.
+
+## Multivariate Analysis
+
+The first step will be to carry out a multidimensional analysis in order to obtain relevant information about the data with which you are working. We must point out that, although most of the data are categorical, there are 6 variables in whose description they are classified as numerical: age, duration, amount, install_rate, num_dependents and num_credits. However, it was found that install_rate and num_credits have a limited set of integer values, so they were coded as factors.
+
+```{r}
+### Loading the data
+credit_prev = read_excel("C:/Users/arpri/OneDrive/Escritorio/libros/master/Segundo Semicuatrimestre/Modelos de Regresión/modelling competition/credit.xls") 
+```
+
+```{r}
+#### CATEGORICAL VARIABLES AS FACTORS
+
+### Re-coding the variables 
+colnames(credit_prev)[8]= c("RADIO_TV")
+colnames(credit_prev)[18]= c("COAPPLICANT")
+
+numerics = c("DURATION", "AMOUNT", "AGE", "NUM_CREDITS")
+factors = credit_prev[, !names(credit_prev) %in% numerics] 
+
+factors = as.data.frame(lapply(factors, as.factor)) # Dataset with categorical regressors and response
+numerics = credit_prev[, numerics] # Dataset with Quant regressors
+
+credit = cbind(factors,numerics)
+```
+
+### a) Qualitative variables
+
+The plots that we can see below allow us to obtain very relevant information about the categorical variables of the dataset. First, there are several variables in which there is a very large imbalance between the different categories that compose it, which can be problematic when considering their interaction with another variable, since there will be interaction terms with no events. Furthermore, there are some cases where the population of a particular category is mainly composed of one type client. This fact can be seen for type 3 of savings account, that is, people with high amount of money in their savings account; for guarantor, where all the people with a guarantor are good clients; and for used cars, divorced males and foreign. On the other hand, there are some covariates in which the proportion of good/bad people fairly vary between their categories. For instance, categories 0 and 1 of checking account present almost the same proportion. In order to analyze the significance of these differences, a chi-square test was performed on all the variables. If the differences between categories are non-significant, these variables are expected to have, almost surely, a low predictive power. Those variables with a p-value higher than 0.45 were removed, being in this case: furniture, male_mar_or_wid, present_resident, job and num_dependents. By last, regarding the response variable, it exists an unbalanced situation (30% bad clients and 70% good ones), which can affect the performance of the models. 
+
+```{r, out.width="900px"}
+pepe=ggplot(credit, aes(x=RESPONSE), fill=RESPONSE) + geom_bar() + theme_minimal()
+p0 = ggplot(credit, aes(x=CHK_ACCT,fill = RESPONSE)) + geom_bar() + theme_minimal() + theme(legend.position = "none")
+p1 = ggplot(credit, aes(x=HISTORY,fill = RESPONSE)) + geom_bar() + theme_minimal() + theme(legend.position = "none")
+p2 = ggplot(credit, aes(x=NEW_CAR,fill = RESPONSE)) + geom_bar() + theme_minimal() + theme(legend.position = "none")
+p3 = ggplot(credit, aes(x=USED_CAR,fill = RESPONSE)) + geom_bar() + theme_minimal() + theme(legend.position = "none")
+p4 = ggplot(credit, aes(x=FURNITURE,fill = RESPONSE)) + geom_bar() + theme_minimal() + theme(legend.position = "none")
+p5 = ggplot(credit, aes(x=RADIO_TV,fill = RESPONSE)) + geom_bar() + theme_minimal() + theme(legend.position = "none")
+p6 = ggplot(credit, aes(x=EDUCATION,fill = RESPONSE)) + geom_bar() + theme_minimal() + theme(legend.position = "none")
+p7 = ggplot(credit, aes(x=RETRAINING,fill = RESPONSE)) + geom_bar() + theme_minimal() + theme(legend.position = "none")
+p8 = ggplot(credit, aes(x=SAV_ACCT,fill = RESPONSE)) + geom_bar() + theme_minimal() + theme(legend.position = "none")
+p9 = ggplot(credit, aes(x=EMPLOYMENT,fill = RESPONSE)) + geom_bar() + theme_minimal() + theme(legend.position = "none")
+p10 = ggplot(credit, aes(x=INSTALL_RATE,fill = RESPONSE)) + geom_bar() + theme_minimal() + theme(legend.position = "none")
+p11 = ggplot(credit, aes(x=MALE_DIV,fill = RESPONSE)) + geom_bar() + theme_minimal() + theme(legend.position = "none")
+p12 = ggplot(credit, aes(x=MALE_SINGLE,fill = RESPONSE)) + geom_bar() + theme_minimal() + theme(legend.position = "none")
+p13 = ggplot(credit, aes(x=MALE_MAR_or_WID,fill = RESPONSE)) + geom_bar() + theme_minimal() + theme(legend.position = "none")
+p14 = ggplot(credit, aes(x=COAPPLICANT,fill = RESPONSE)) + geom_bar() + theme_minimal() + theme(legend.position = "none")
+p15 = ggplot(credit, aes(x=GUARANTOR,fill = RESPONSE)) + geom_bar() + theme_minimal() + theme(legend.position = "none")
+p16 = ggplot(credit, aes(x=PRESENT_RESIDENT,fill = RESPONSE)) + geom_bar() + theme_minimal() + theme(legend.position = "none")
+p17 = ggplot(credit, aes(x=PROP_UNKN_NONE,fill = RESPONSE)) + geom_bar() + theme_minimal() + theme(legend.position = "none")
+p18 = ggplot(credit, aes(x=OTHER_INSTALL,fill = RESPONSE)) + geom_bar() + theme_minimal() + theme(legend.position = "none")
+p19 = ggplot(credit, aes(x=RENT,fill = RESPONSE)) + geom_bar() + theme_minimal() + theme(legend.position = "none")
+p20 = ggplot(credit, aes(x=OWN_RES,fill = RESPONSE)) + geom_bar() + theme_minimal() + theme(legend.position = "none")
+p22 = ggplot(credit, aes(x=NUM_DEPENDENTS,fill = RESPONSE)) + geom_bar() + theme_minimal() + theme(legend.position = "none")
+p23 = ggplot(credit, aes(x=JOB,fill = RESPONSE)) + geom_bar() + theme_minimal() + theme(legend.position = "none")
+p24 = ggplot(credit, aes(x=TELEPHONE,fill = RESPONSE)) + geom_bar() + theme_minimal() + theme(legend.position = "none")
+p25 = ggplot(credit, aes(x=FOREIGN,fill = RESPONSE)) + geom_bar() + theme_minimal() + theme(legend.position = "none")
+p26 = ggplot(credit, aes(x=REAL_ESTATE,fill = RESPONSE)) + geom_bar() + theme_minimal() + theme(legend.position = "none")
+
+grid.arrange(pepe,p0, p1, p2, p3, p4, p5, p6, p7, p8, p9, p10, p11, p12, p13, nrow = 3)
+grid.arrange(p14, p15, p16, p17, p18, p19, p20, p22, p23, p24, p25,p26, nrow = 3)
+```
+
+
+
+```{r, echo=FALSE}
+### Chi-squared test: 
+result = list(CHK_ACCT = chisq.test(credit$CHK_ACCT,credit$RESPONSE)$p.value, 
+              HISTORY = chisq.test(credit$HISTORY, credit$RESPONSE)$p.value, 
+              NEW_CAR = chisq.test(credit$NEW_CAR, credit$RESPONSE)$p.value, 
+              USED_CAR = chisq.test(credit$USED_CAR, credit$RESPONSE)$p.value, 
+              FURNITURE = chisq.test(credit$FURNITURE, credit$RESPONSE)$p.value, 
+              RADIO_TV = chisq.test(credit$RADIO_TV, credit$RESPONSE)$p.value, 
+              EDUCATION = chisq.test(credit$EDUCATION, credit$RESPONSE)$p.value, 
+              RETRAINING = chisq.test(credit$RETRAINING, credit$RESPONSE)$p.value, 
+              SAV_ACCT = chisq.test(credit$SAV_ACCT, credit$RESPONSE)$p.value, 
+              EMPLOYMENT = chisq.test(credit$EMPLOYMENT, credit$RESPONSE)$p.value, 
+              INSTALL_RATE = chisq.test(credit$INSTALL_RATE, credit$RESPONSE)$p.value, 
+              MALE_DIV = chisq.test(credit$MALE_DIV, credit$RESPONSE)$p.value, 
+              MALE_SINGLE = chisq.test(credit$MALE_SINGLE, credit$RESPONSE)$p.value, 
+              MALE_MAR_or_WID = chisq.test(credit$MALE_MAR_or_WID, credit$RESPONSE)$p.value, 
+              COAPPLICANT = chisq.test(credit$COAPPLICANT, credit$RESPONSE)$p.value, 
+              GUARANTOR = chisq.test(credit$GUARANTOR, credit$RESPONSE)$p.value, 
+              PRESENT_RESIDENT = chisq.test(credit$PRESENT_RESIDENT, credit$RESPONSE)$p.value, 
+              PROP_UNKN_NONE = chisq.test(credit$PROP_UNKN_NONE, credit$RESPONSE)$p.value, 
+              OTHER_INSTALL = chisq.test(credit$OTHER_INSTALL, credit$RESPONSE)$p.value, 
+              RENT = chisq.test(credit$RENT, credit$RESPONSE)$p.value, 
+              REAL_ESTATE = chisq.test(credit$REAL_ESTATE, credit$RESPONSE)$p.value, 
+              OWN_RES = chisq.test(credit$OWN_RES, credit$RESPONSE)$p.value, 
+              JOB = chisq.test(credit$JOB, credit$RESPONSE)$p.value, 
+              NUM_DEPENDENTS = chisq.test(credit$NUM_DEPENDENTS, credit$RESPONSE)$p.value, 
+              TELEPHONE = chisq.test(credit$TELEPHONE, credit$RESPONSE)$p.value, 
+              FOREIGN= fisher.test(credit$FOREIGN, credit$RESPONSE)$p.value)
+#result
+
+# Disregard almost-surely irrelevant variables 
+selected = ifelse(result < 0.45, 1, 0)
+selected = names(selected[selected == 1])
+
+credit$FURNITURE = NULL 
+credit$MALE_MAR_or_WID = NULL 
+credit$PRESENT_RESIDENT = NULL 
+credit$JOB = NULL 
+credit$NUM_DEPENDENTS = NULL  
+credit$OBS. = NULL
+```
+
+
+
+### b) Quantitative variables 
+
+Let's now look at the quantitative variables. It can be seen that there is a lot of overlapping between the good and bad client distributions. In order to check for the significance of the mean difference we will compute a t-test to obtain information about if these variables allow us to discriminate both groups. Doing this, we obtain a p-value of 0.0038 for age, 2.47e-05 for amount and 2.4e-10 for duration, meaning that the three of them are significant, although age on a lower level.
+
+```{r, fig.height=3, fig.width = 6}
+### Quantitative analysis 
+
+p27 = credit %>% ggplot(aes(x = DURATION)) +  
+  geom_density(aes(group = RESPONSE, 
+                   colour = RESPONSE, 
+                   fill = RESPONSE),
+                   alpha = 0.2) + theme_minimal() + theme(legend.title = element_blank())
+p28 = credit %>% ggplot(aes(x = AMOUNT)) +  
+  geom_density(aes(group = RESPONSE, 
+                   colour = RESPONSE, 
+                   fill = RESPONSE),
+                   alpha = 0.2) + theme_minimal() + theme(legend.title = element_blank())
+p29 = credit %>% ggplot(aes(x = AGE)) +  
+  geom_density(aes(group = RESPONSE, 
+                   colour = RESPONSE, 
+                   fill = RESPONSE),
+                   alpha = 0.2) + theme_minimal() + theme(legend.title = element_blank())
+p30 = credit %>% ggplot(aes(x = NUM_CREDITS)) +  
+  geom_density(aes(group = RESPONSE, 
+                   colour = RESPONSE, 
+                   fill = RESPONSE),
+                   alpha = 0.2) + theme_minimal() + theme(legend.title = element_blank())
+grid.arrange(p27, p28, p29, p30, nrow = 2)
+```
+
+
+
+```{r}
+response_quantitative = list(AGE = t.test(credit$AGE ~ credit$RESPONSE)$p.value, 
+                             AMOUNT = t.test(credit$AMOUNT ~ credit$RESPONSE)$p.value, 
+                             DURATION = t.test(credit$DURATION ~ credit$RESPONSE)$p.value)
+#response_quantitative
+```
+
+
+As part of the multivariate analysis, the scatterplot and a correlation analysis has been obtained. From this analysis, it can be seen the high positive correlation value between both amount and duration, which is around 0,6. This trend can be also analyzed in the scatterplot, where it does not seem to be any distinguish frontier between both classification groups. It does not seem to be any relation between age or the number of credits and any other quantitative variable, which does not seem intuitive. Regarding the outliers, there are isolated values in the variables duration and amount, and in the variables amount and age, belonging specially to the good rating class.
+
+
+```{r, fig.height=3}
+#### Scatterplot for numeric variables
+
+color_1 <- rgb(0.8,0.4,0.1,0.7) #pink: #CC661AB3 BAD RATING
+color_2 <- rgb(0.2,0.4,0.1,0.7) #green: #33661AB3 GOOD RATING
+color_3 <- "darkgray"
+color_4 <- "darkorchid4"
+colors_Classification <- c(color_2,color_1)[1*(credit$RESPONSE==1)+1]
+
+pairs(numerics,col=colors_Classification, pch=19)
+```
+
+
+
+# Modeling 
+
+For this part of the project, the fundamental objective was to obtain the best model using the minimum number of variables possible. The basic procedure consisted of starting from the simple linear model without interactions, selecting the significant variables of the model, and increasing its complexity by adding interactions, as well as checking if any of the variables exhibited non-linear behavior. For this, the database was divided into test and training, maintaining the proportion of the categories (20% and 80% respectively). In this section the models were selected using only the training set.
+
+
+```{r}
+### Training and testing set
+library(caret)
+set.seed(1998)
+trainIndex <- createDataPartition(credit$RESPONSE, p = .8,
+                                  list = FALSE,
+                                  times = 1)
+credit_train <- credit[ trainIndex,]
+credit_test <- credit[-trainIndex,]
+```
+
+
+
+
+## Simpler models and feature extraction 
+
+In this section, the model considering only the lineal relations will be obtained. Then, the step-wise method based on the metric AIC will be computed to select all those significant variables of the model, and then the performance of the method will be evaluated. 
+
+
+### Logistic regression (no interactions)
+
+
+In order to obtain a reduced subset of variables, the first thing to consider is the linear model with all the variables. After applying the step-wise function, some variables were removed from this set. On the one hand, some covariates such as retraining, divorced male or , the non-significance can be cause because of their imbalanced categories, which can cause that the number of samples including in one of them is not enough to develop the models. The other variables that were removed were having a radio or TV, employment, if the applicant owes a property, age and number of credits. In the case of the age, it was an interesting thing not having obtained such a significant value in the model, as well as for the employment case, which were some promising ones from an intuitively point of view. In the case of the employment variable, for instance, the fact of having so many categories, can cause, again, that in some cases the number of bad clients, for instance, in some category, is insufficient to fit the model significantly. 
+
+
+```{r, echo = FALSE}
+#### Formula declaration
+
+## Variable names 
+
+varnames = colnames(credit_train)
+# We delete the number of the observation and the RESPONSE 
+varnames = varnames[-which(varnames == "RESPONSE")]
+
+## Formulas 
+
+# Simpler formula (sum of the response variables)
+simple_formula = as.formula(paste("RESPONSE ~ ", paste(varnames, collapse = "+")))
+```
+
+```{r}
+#### Simpler model: Logistic model with no interaction terms 
+
+# Fit the simpler model with glm
+lr.simple = glm(simple_formula, family = binomial, credit_train)
+lr.simple = glm(simple_formula, family = binomial, credit_train)
+#summary(lr.simple)
+```
+
+
+```{r, echo = FALSE}
+lr.stepAIC = stepAIC(lr.simple, direction = "both", trace = FALSE)
+
+#summary(lr.stepAIC)
+```
+
+
+The final model from this section, is: RESPONSE ~ CHK_ACCT + HISTORY + NEW_CAR + USED_CAR + EDUCATION + SAV_ACCT + INSTALL_RATE + MALE_SINGLE + COAPPLICANT + GUARANTOR + REAL_ESTATE + OTHER_INSTALL + RENT + TELEPHONE + FOREIGN + DURATION + AMOUNT. 
+    
+In order to obtain the predictive power of this model to see whether it can be considered as final model, the ROC curve was plotted to find a fine threshold. In this case, it was 0.731. Using this value, we obtain that the sensibility is 0.783,  which means that the 80% of the people which is a bad client is detected. Respect to the specificity value, it is a bit worse, around 70%. By last, the negative predictive value, which is maybe the most important metric to consider, is around 88.7%, so the 11% of those values which were predicted as good clients, were bad ones. 
+
+
+```{r, message=FALSE, warning=FALSE,fig.height= 3, echo = FALSE, include= FALSE}
+# ROC function 
+library(pROC)
+lrProb = predict(lr.stepAIC, newdata=credit_train, type="response")
+
+plot.roc(credit_train$RESPONSE, lrProb,col="darkblue", print.auc = TRUE,  auc.polygon=TRUE, grid=c(0.1, 0.2),
+         grid.col=c("green", "red"), max.auc.polygon=TRUE,
+         auc.polygon.col="lightblue", print.thres=TRUE)
+```
+
+
+```{r, echo = FALSE}
+glm_probs = predict(lr.stepAIC, credit_train, type="response")
+
+glm_pred = ifelse(glm_probs > 0.713, "1", "0")
+
+#confusionMatrix(data = as.factor(glm_pred), reference = credit_train$RESPONSE)
+```
+
+
+
+#### Reduction of categories 
+
+On of the interesting methods to reduce dimensionality in a dataset with many categorical variables is merging some non-significant categories of the selected variables. To know which categories can be merged, we look at those non-significant ones from the last fitted model, being the affected variables: SAV_ACCT, HISTORY and INSTALL_RATE. However, in order to ensure that the merging of these categories was not altering the performance of the model, three anovas were computed, comparing the last model to the new one with the merged categories, by covariate. In all the cases the p-value was greater than 0.05, so the reduced of dimensionality is justified. 
+
+In the case of the average balance in savings account, the categories 1 and 2 were merged with the 0 category. This fact means that all those people with less than 1000 DM as average balance, were imputed into one single category. Regarding HISTORY, the categories 0 ad 1 were merged, so that people with no credits taken were considered in the same category as those that have paid all those credits duly. By last, in the case of the install rate, those clients with an install rate lower or equal than 3, were merged together. 
+
+By last, the is again obtained with all the previous changes applied. No significant decreasing in the AUC has been caused, and even the specificity has been improved, being the new threshold 0.705. As these models were so similar, we have only considered this last one to work with in some of the following steps. However, before fitting more models, the residual plots have been analyzed. 
+
+
+
+```{r, echo = FALSE}
+### FORMULA: 
+
+formula_glm1 = "RESPONSE ~ CHK_ACCT + HISTORY + NEW_CAR + USED_CAR + 
+    EDUCATION + SAV_ACCT + INSTALL_RATE + MALE_SINGLE + COAPPLICANT + 
+    GUARANTOR + REAL_ESTATE + OTHER_INSTALL + RENT + TELEPHONE + 
+    FOREIGN + DURATION + AMOUNT"
+
+### SAV_ACCT
+
+# Merge categories
+credit_lm = credit_train
+credit_lm$SAV_ACCT[credit_lm$SAV_ACCT == "1"|credit_lm$SAV_ACCT == "2"] = "0"
+credit_lm$SAV_ACCT = factor(credit_lm$SAV_ACCT)
+
+# Train the model again with the reduced formula obtained by LRT
+lr.simple_merged = glm(as.formula(formula_glm1), family = binomial, credit_lm)
+
+# anova between both models 
+#anova(lr.simple, lr.simple_merged, test="Chisq")$`Pr(>Chi)`[2]
+
+# as p-vale > 0.05, then credit = credit_lm 
+
+credit_train = credit_lm
+```
+
+
+
+```{r, echo = FALSE}
+### HISTORY
+
+# Merge categories
+credit_lm = credit_train
+credit_lm$HISTORY[credit_lm$HISTORY == "1"] = "0"
+credit_lm$HISTORY = factor(credit_lm$HISTORY)
+
+# Train the model again with the reduced formula obtained by LRT
+lr.simple_merged = glm(as.formula(formula_glm1), family = binomial, credit_lm)
+
+# anova between both models 
+#anova(lr.simple, lr.simple_merged, test="Chisq")$`Pr(>Chi)`[2]
+
+# as p-vale > 0.05, then credit = credit_lm 
+
+credit_train = credit_lm
+```
+
+```{r, echo = FALSE}
+### INSTALL_RATE 
+
+# Merge categories
+credit_lm = credit_train
+credit_lm$INSTALL_RATE[credit_lm$INSTALL_RATE == "2"|credit_lm$INSTALL_RATE == "3"] = "1"
+credit_lm$INSTALL_RATE = factor(credit_lm$INSTALL_RATE)
+
+# Train the model again with the reduced formula obtained by LRT
+lr.simple_merged = glm(as.formula(formula_glm1), family = binomial, credit_lm)
+
+# anova between both models 
+#anova(lr.simple, lr.simple_merged, test="Chisq")$`Pr(>Chi)`[2]
+
+# as p-vale > 0.05, then credit = credit_lm 
+
+credit_train = credit_lm
+```
+
+
+```{r, echo = FALSE}
+### Fit again the model 
+
+# Fit the simpler model with glm
+lr.simple_merged = glm(formula_glm1, family = binomial, credit_train)
+#summary(lr.simple_merged)
+```
+
+
+```{r message=FALSE, warning=FALSE, fig.height= 3}
+# ROC function 
+lrProb = predict(lr.simple_merged, newdata=credit_train, type="response")
+
+plot.roc(credit_train$RESPONSE, lrProb,col="darkblue", print.auc = TRUE,  auc.polygon=TRUE, grid=c(0.1, 0.2),
+         grid.col=c("green", "red"), max.auc.polygon=TRUE,
+         auc.polygon.col="lightblue", print.thres=TRUE)
+```
+
+
+
+```{r, echo = FALSE}
+glm_probs = predict(lr.simple_merged, credit_train, type="response")
+
+glm_pred = ifelse(glm_probs > 0.705, "1", "0")
+
+#confusionMatrix(data = as.factor(glm_pred), reference = credit_train$RESPONSE)
+```
+
+
+
+#### Study of the residuals
+
+The first thing we will try to figure out is the presence of some non-linear effects. In order to achieve this, we have fitted n models (being n the number of explanatory variables from the previous model), where only one explanatory variable was introduced. Then, the residual plots for each model were obtained to check our assumptions.
+
+We can see that some of the variables present non linear effects, which can be due to the presence of interaction with another variable. For instance, the category 2 of CHK_ACCT, the 2 and 3 categories from HISTORY, the 3 from SAV_ACCT, the 1 from INSTALL_RATE, the 1 from MALE_SINGLE and GUARANTOR, have their mean value higher or lower than the expected one, which should be 0. 
+
+```{r, width.out="900px"}
+library(statmod)
+
+#model individual variables to see nonlinearities
+varnames = c("CHK_ACCT", "HISTORY", "NEW_CAR", "USED_CAR",  "EDUCATION" , "SAV_ACCT" , "INSTALL_RATE" , "MALE_SINGLE" , "COAPPLICANT" , "GUARANTOR" , "REAL_ESTATE" , "OTHER_INSTALL" , "RENT" , "TELEPHONE" ,  "FOREIGN" , "DURATION" , "AMOUNT")
+
+par(mfrow=c(3,6))
+for(var in varnames){
+  formulaonevariable=as.formula(paste(c("RESPONSE ~"), var))
+  modelonevariable=glm(formulaonevariable,family=binomial, credit_train)
+  plot(credit_train[[var]], qres.binom(modelonevariable), xlab=var, ylab="Quantile residuals")
+}
+```
+
+Furthermore, these plots are showing that there must be interaction terms that are affecting the linearity plot. Moreover, there are many observations that are affecting significantly the performance of the models, with a high leverage level. However, we decided not to remove them, since they can be important observations for the bank, so that we would need expert knowledge. 
+
+```{r, out.height="300px"}
+#### Residual plots
+
+# Plotting the first 4 plots
+par(mfrow = c(2,2))
+glm.diag.plots(lr.simple_merged)
+```
+
+ 
+
+
+## Logistic regression (interactions)
+
+As all the previous steps were interesting not only to check our results, but for obtaining the feature extraction of the dataset. For this section, the previous explanatory variables will be used, and the interaction terms between them will be also obtained. However, as we said in the Multidimensional Analysis, some of the interactions between categories are expected to be almost empty, since there are no enough samples. This is a problem, since it infers in the convergence of the algorithm used to fit the model. The function step-wise has been used to obtain the subset of variables with which the algorithm converges. Two examples can be seen in the following boxplots:
+
+
+```{r, fig.height= 2}
+p0 = ggplot(credit_train, aes(x=SAV_ACCT,fill = NEW_CAR)) + geom_bar() + theme_minimal() + theme()+ theme(legend.position = "none")
+p4 = ggplot(credit_train, aes(x=FOREIGN,fill = TELEPHONE)) + geom_bar() + theme_minimal() + theme()+ theme(legend.position = "none")
+
+grid.arrange(p0,p4, nrow = 1)
+```
+
+ 
+
+```{r, echo = FALSE}
+## Formulas 
+
+# Simpler formula (sum of the response variables)
+simple_formula = as.formula(paste("RESPONSE ~ ", paste(varnames, collapse = "+")))
+
+# Formula allowing only interaction between two variables 
+double_formula = c()
+for (i in 1:(length(varnames))){
+  for (j in 1:(length(varnames))){
+    if(i<j){
+      double_formula = c(double_formula, paste(c(varnames[i], varnames[j]), collapse = ":"))  
+    }
+  }
+}
+double_interaction_formula = paste(c( varnames, paste(double_formula, collapse = "+")), collapse = "+")
+
+# Delete guarantor:history
+```
+
+
+```{r, echo = FALSE}
+### Fit again the model : NO CORRER 
+
+# Fit the simpler model with glm
+#lr.interaction = glm(paste("RESPONSE ~ ", double_interaction_formula), family = binomial, credit)
+#summary(lr.interaction)
+```
+
+
+```{r, echo = FALSE}
+finalformula_nonreduced = "SAV_ACCT+CHK_ACCT+HISTORY+NEW_CAR+INSTALL_RATE+MALE_SINGLE+COAPPLICANT+REAL_ESTATE+GUARANTOR+OTHER_INSTALL+FOREIGN+DURATION+AMOUNT+USED_CAR+EDUCATION+TELEPHONE+RENT+SAV_ACCT:CHK_ACCT+SAV_ACCT:HISTORY+SAV_ACCT:INSTALL_RATE+SAV_ACCT:MALE_SINGLE+SAV_ACCT:OTHER_INSTALL+SAV_ACCT:DURATION+SAV_ACCT:USED_CAR+CHK_ACCT:HISTORY+CHK_ACCT:NEW_CAR+CHK_ACCT:INSTALL_RATE+CHK_ACCT:MALE_SINGLE+CHK_ACCT:GUARANTOR+CHK_ACCT:OTHER_INSTALL+CHK_ACCT:DURATION+CHK_ACCT:AMOUNT+CHK_ACCT:USED_CAR+CHK_ACCT:EDUCATION+CHK_ACCT:TELEPHONE+HISTORY:NEW_CAR+HISTORY:INSTALL_RATE+HISTORY:MALE_SINGLE+HISTORY:OTHER_INSTALL+HISTORY:DURATION+HISTORY:AMOUNT+HISTORY:USED_CAR+HISTORY:TELEPHONE+NEW_CAR:INSTALL_RATE+NEW_CAR:MALE_SINGLE+NEW_CAR:GUARANTOR+NEW_CAR:OTHER_INSTALL+NEW_CAR:FOREIGN+NEW_CAR:DURATION+NEW_CAR:AMOUNT+NEW_CAR:TELEPHONE+NEW_CAR:PROP_UNKN_NONE+INSTALL_RATE:MALE_SINGLE+INSTALL_RATE:GUARANTOR+INSTALL_RATE:OTHER_INSTALL+INSTALL_RATE:FOREIGN+INSTALL_RATE:DURATION+INSTALL_RATE:AMOUNT+INSTALL_RATE:USED_CAR+INSTALL_RATE:EDUCATION+INSTALL_RATE:TELEPHONE+INSTALL_RATE:PROP_UNKN_NONE"
+```
+
+
+```{r, echo = FALSE}
+### Fit again the model 
+
+# Fit the simpler model with glm
+lr.interaction = glm(paste("RESPONSE ~ ", finalformula_nonreduced), family = binomial, credit_train)
+#stepwise(lr.interaction, direction = "backward/forward")
+```
+
+
+The final formula obtained is: 
+
+RESPONSE ~ SAV_ACCT + CHK_ACCT + HISTORY + NEW_CAR + INSTALL_RATE + 
+    MALE_SINGLE + COAPPLICANT + REAL_ESTATE + GUARANTOR + OTHER_INSTALL + 
+    FOREIGN + DURATION + AMOUNT + USED_CAR + EDUCATION + TELEPHONE + 
+    RENT + SAV_ACCT:INSTALL_RATE + SAV_ACCT:MALE_SINGLE + SAV_ACCT:OTHER_INSTALL + 
+    SAV_ACCT:DURATION + SAV_ACCT:USED_CAR + CHK_ACCT:OTHER_INSTALL + 
+    CHK_ACCT:DURATION + CHK_ACCT:AMOUNT + HISTORY:DURATION + 
+    HISTORY:AMOUNT + NEW_CAR:INSTALL_RATE + NEW_CAR:MALE_SINGLE + 
+    NEW_CAR:GUARANTOR + NEW_CAR:OTHER_INSTALL + NEW_CAR:FOREIGN + 
+    NEW_CAR:DURATION + NEW_CAR:AMOUNT + NEW_CAR:TELEPHONE +
+    INSTALL_RATE:MALE_SINGLE + INSTALL_RATE:GUARANTOR + INSTALL_RATE:OTHER_INSTALL + 
+    INSTALL_RATE:FOREIGN + INSTALL_RATE:DURATION + INSTALL_RATE:AMOUNT + 
+    INSTALL_RATE:USED_CAR + INSTALL_RATE:EDUCATION + INSTALL_RATE:TELEPHONE
+
+The ROC curve is the following one, in which we can see the improvement of the results. The most important metrics have increased considerably. On the one hand, the negative predictive value is 91%, and the sensibility increases to 83%. Moreover, the AUC is 0.866, which means that the model is good, and it has improved compared to the previous results. However, the improvement is not too high compared with the complexity of the model considered. 
+
+
+```{r message=FALSE, warning=FALSE, fig.height= 3}
+finalformula_reduced = "RESPONSE ~ SAV_ACCT + CHK_ACCT + HISTORY + NEW_CAR + INSTALL_RATE + 
+    MALE_SINGLE + COAPPLICANT + REAL_ESTATE + GUARANTOR + OTHER_INSTALL + 
+    FOREIGN + DURATION + AMOUNT + USED_CAR + EDUCATION + TELEPHONE + 
+    RENT + SAV_ACCT:INSTALL_RATE + SAV_ACCT:MALE_SINGLE + SAV_ACCT:OTHER_INSTALL + 
+    SAV_ACCT:DURATION + SAV_ACCT:USED_CAR + CHK_ACCT:OTHER_INSTALL + 
+    CHK_ACCT:DURATION + CHK_ACCT:AMOUNT + HISTORY:DURATION + 
+    HISTORY:AMOUNT + NEW_CAR:INSTALL_RATE + NEW_CAR:MALE_SINGLE + 
+    NEW_CAR:GUARANTOR + NEW_CAR:OTHER_INSTALL + NEW_CAR:FOREIGN + 
+    NEW_CAR:DURATION + NEW_CAR:AMOUNT + NEW_CAR:TELEPHONE +
+    INSTALL_RATE:MALE_SINGLE + INSTALL_RATE:GUARANTOR + INSTALL_RATE:OTHER_INSTALL + 
+    INSTALL_RATE:FOREIGN + INSTALL_RATE:DURATION + INSTALL_RATE:AMOUNT + 
+    INSTALL_RATE:USED_CAR + INSTALL_RATE:EDUCATION + INSTALL_RATE:TELEPHONE"
+
+lr.interaction = glm(finalformula_reduced, family = binomial, credit_train)
+
+lrProb = predict(lr.interaction, newdata=credit_train, type="response")
+
+plot.roc(credit_train$RESPONSE, lrProb,col="darkblue", print.auc = TRUE,  auc.polygon=TRUE, grid=c(0.1, 0.2),
+         grid.col=c("green", "red"), max.auc.polygon=TRUE,
+         auc.polygon.col="lightblue", print.thres=TRUE)
+```
+
+
+
+```{r}
+glm_probs = predict(lr.interaction, credit_train, type="response")
+glm_pred = ifelse(glm_probs > 0.748, "1", "0")
+#confusionMatrix(data = as.factor(glm_pred), reference = credit_train$RESPONSE)
+```
+
+
+
+## Generalized Additive Models 
+
+We wanted to check whether some of the quantitative variables, and their interactions with other covariates, presented a non-linearity expression (amount and duration), so that some GAM models were fitted. We used 30 knots, both m=2 and 3, and the p-spline basis. Moreover, the method for the smoothing parameter was REML. We also included some semi-parametric models fitting the interaction effects. 
+
+From all these models, the simpler and powerful one was just smoothing the logarithm of the amount variable, with m = 1. In general, the performance of this model is pretty good, with an AUC of 0.88, a negative predictive value of 0.90, and a sensitivity of 0.80. The specificity has improved considerably with respect to the models above, having a value of 0.81. The threshold used in this case was 0.68. 
+
+
+
+
+```{r, echo = FALSE, include = FALSE}
+credit_lm = credit_train
+credit_lm$AMOUNT = log(credit_train$AMOUNT)
+
+finalformula_gam = RESPONSE ~ SAV_ACCT + CHK_ACCT + HISTORY + NEW_CAR + INSTALL_RATE + 
+    MALE_SINGLE + COAPPLICANT + REAL_ESTATE + GUARANTOR + OTHER_INSTALL + 
+    FOREIGN + DURATION + s(AMOUNT, bs = "ps", k=30, m=1) + USED_CAR + EDUCATION + TELEPHONE + 
+    RENT + SAV_ACCT:INSTALL_RATE + SAV_ACCT:MALE_SINGLE + SAV_ACCT:OTHER_INSTALL + 
+    SAV_ACCT:DURATION + SAV_ACCT:USED_CAR + CHK_ACCT:OTHER_INSTALL + 
+    CHK_ACCT:DURATION + CHK_ACCT:AMOUNT + HISTORY:DURATION + 
+    HISTORY:AMOUNT + NEW_CAR:INSTALL_RATE + NEW_CAR:MALE_SINGLE + 
+    NEW_CAR:GUARANTOR + NEW_CAR:OTHER_INSTALL + NEW_CAR:FOREIGN + 
+    NEW_CAR:DURATION + NEW_CAR:AMOUNT + NEW_CAR:TELEPHONE +
+    INSTALL_RATE:MALE_SINGLE + INSTALL_RATE:GUARANTOR + INSTALL_RATE:OTHER_INSTALL + 
+    INSTALL_RATE:FOREIGN + INSTALL_RATE:DURATION + INSTALL_RATE:AMOUNT + 
+    INSTALL_RATE:USED_CAR + INSTALL_RATE:EDUCATION + INSTALL_RATE:TELEPHONE
+
+
+simplesmoothing = gam(finalformula_gam, family=binomial, method = "REML", data=credit_lm, select=TRUE)
+summary(simplesmoothing)
+```
+
+
+```{r, echo = FALSE, fig.height= 3}
+lrProb = predict(simplesmoothing, newdata=credit_lm, type="response")
+
+plot.roc(credit_lm$RESPONSE, lrProb,col="darkblue", print.auc = TRUE,  auc.polygon=TRUE, grid=c(0.1, 0.2),
+         grid.col=c("green", "red"), max.auc.polygon=TRUE,
+         auc.polygon.col="lightblue", print.thres=TRUE)
+#glm_probs = predict(simplesmoothing, credit_lm, type="response")
+#glm_pred = ifelse(glm_probs > 0.680, "1", "0")
+#PconfusionMatrix(data = as.factor(glm_pred), reference = credit_lm$RESPONSE)
+```
+
+
+
+
+
+
+# Final results
+
+## Using ROC thresholds 
+
+In this section, we will compare the last results predicting the testing set, so that we can really compare their performance with new data. The models that we have used are the logistic regression with no interaction terms, the logistic regression with interaction terms, and the GAM model. The following table summarizes the final results: 
+
+
+|                       |        Accuracy   |  Sensitivity       |   Specificity      | Neg Pred Value    |
+|:---------------------:|:-----------------:|:------------------:|:------------------:|:------------------|                
+| LR (no interactions)  |   0.730           |      0.716         |     0.736          |       0.858       |
+| LR (with interactions)|   0.755           |      0.766         |     0.750          |       0.882       | 
+| GAM                   |   0.775           |      0.683         |     0.814          |       0.857       |
+
+
+Here, it can be seen that although the GAM model obtains the best accuracy level, it has the lower negative predictive value. Furthermore, in terms of the bank interests, the best model is the LR with interactions, since is the one that has a lower false positive error rate, as well as a higher sensitivity value. However, it can be seen that an increase in the complexity of the model is not changing radically the final results. Now, the question is if we could improve this performance in terms of the bank interests. In fact, we can, as we will see in the following section.     
+        
+
+
+```{r, include = FALSE}
+#### Re labelling the test data
+
+# Merge categories
+credit_test$SAV_ACCT[credit_test$SAV_ACCT == "1"|credit_test$SAV_ACCT == "2"] = "0"
+credit_test$SAV_ACCT = factor(credit_test$SAV_ACCT)
+
+credit_test$HISTORY[credit_test$HISTORY == "1"] = "0"
+credit_test$HISTORY = factor(credit_test$HISTORY)
+
+credit_test$INSTALL_RATE[credit_test$INSTALL_RATE == "2"|credit_test$INSTALL_RATE == "3"] = "1"
+credit_test$INSTALL_RATE = factor(credit_test$INSTALL_RATE)
+```
+
+
+
+```{r, fig.height= 5, fig.weight = 8, include = FALSE}
+lrProb1 = predict(lr.interaction, newdata=credit_test, type="response")
+
+lrProb2 = predict(lr.simple_merged, newdata=credit_test, type="response")
+
+credit_test_lm = credit_test
+credit_test_lm$AMOUNT = log(credit_test$AMOUNT)
+lrProb = predict(simplesmoothing, newdata=credit_test_lm, type="response")
+
+par(mfrow=c(1,3))
+plot.roc(credit_test$RESPONSE, lrProb1,col="darkblue", print.auc = TRUE,  auc.polygon=TRUE, grid=c(0.1, 0.2),
+         grid.col=c("green", "red"), max.auc.polygon=TRUE,
+         auc.polygon.col="lightblue", print.thres=TRUE)
+
+
+plot.roc(credit_test$RESPONSE, lrProb2,col="darkblue", print.auc = TRUE,  auc.polygon=TRUE, grid=c(0.1, 0.2),
+         grid.col=c("green", "red"), max.auc.polygon=TRUE,
+         auc.polygon.col="lightblue", print.thres=TRUE)
+
+
+plot.roc(credit_test_lm$RESPONSE, lrProb,col="darkblue", print.auc = TRUE,  auc.polygon=TRUE, grid=c(0.1, 0.2),
+         grid.col=c("green", "red"), max.auc.polygon=TRUE,
+         auc.polygon.col="lightblue", print.thres=TRUE)
+
+
+glm_pred = ifelse(lrProb > 0.680, "1", "0")
+confusionMatrix(data = as.factor(glm_pred), reference = credit_test_lm$RESPONSE)
+
+glm_pred = ifelse(lrProb1 > 0.748, "1", "0")
+confusionMatrix(data = as.factor(glm_pred), reference = credit_test$RESPONSE)
+
+glm_pred = ifelse(lrProb2 > 0.705, "1", "0")
+confusionMatrix(data = as.factor(glm_pred), reference = credit_test$RESPONSE)
+```
+
+
+
+
+## Matrix cost
+
+We knew from the beginning that the classification errors were not equivalent for the bank. It is more costly to predict a bad client as a good one, than the opposite situation. This is why we have looked for a matrix cost, that can be applied to the reduced model obtained in the previous sections, in order to fit better the bank expectations. It is expected that this model decreases the specificity level, or the positive error rate. However, in terms of the bank, it will be a better model.  
+
+This cost matrix has been obtained from: https://archive.ics.uci.edu/ml/datasets/statlog+(german+credit+data), and it is the following one: 
+
+|                       | Actual Bad client | Actual Good client |
+|:---------------------:|:-----------------:|:------------------:|
+| Predicted Bad client  |  0                |      1             |
+| Predicted Good client |    5              |      0             |
+
+
+
+
+Several thresholds have been obtained, using the test partition, and the cost lost has been also computed. This cost function computes how much we will lose per miss-classified client. The main goal is to minimize this cost (or maximizing the negative value). In the following plots, some conclusions can be obtained. As we could see in the last sections, the false positive rate was pretty low compared with the false negative one. This means that, although the cost of having a positive miss-classification is 5 times higher than the negative one, as the number of negative ones is sometimes 8 times higher, this compensates the imbalanced costs of both of them. This can be seen in the different tendencies that the two last plots present. 
+
+If we want to minimize the cost, a threshold of 0.86 must be used, which is quite large. When doing this, in the training set the false positive rate has been reduced to 0.052, which is great news. When training this values with the testing set, we obtain the following results: 
+
+
+|                       |        Accuracy   |  Sensitivity       |   Specificity      | Neg Pred Value    |
+|:---------------------:|:-----------------:|:------------------:|:------------------:|:------------------|                
+| LR (matrix cost)      |   0.750           |      0.717         |     0.764          |       0.863       |
+
+
+
+
+
+```{r message=FALSE, warning=FALSE,  fig.height= 4,fig.weight= 4 }
+# Incorporating a custom metric in Caret
+cost.unit <- c(0, 5, 1, 0)
+### Selecting the optimal threshold to give the loan
+
+profit.i = rep(0, length(seq(0.2,0.9,0.01)))
+accuracy = rep(0, length(seq(0.2,0.9,0.01)))
+error_important = rep(0, length(seq(0.2,0.9,0.01)))
+error_rate = rep(0, length(seq(0.2,0.9,0.01)))
+# 100 replicates for training/testing sets for each of the 10 values of threshold
+
+# posterior probabilities
+probability = predict(lr.interaction, credit_train, type="response")
+
+j <- 0
+for (threshold in seq(0.2,0.9,0.01)){
+  #for (p1 in c(0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.75, 0.8, 0.9)){
+  
+  j <- j + 1
+  #cat(j)
+    #p1=1-p0
+    
+    #threshold = 0.5
+    Cred.pred = rep("0", nrow(credit_train))
+    Cred.pred[which(probability > threshold)] = "1"
+    
+    CM = confusionMatrix(factor(Cred.pred), credit_train$RESPONSE)$table
+
+    profit.applicant <- -sum(cost.unit*CM)/sum(CM)
+    profit.i[j] <- profit.applicant
+    accuracy[j] = sum(diag(CM))/sum(CM)
+    error_important[j] = CM[2,1]/sum(CM[2,])
+    error_rate[j] = (CM[2,1] + CM[1,2])/sum(CM)
+    
+}
+```
+
+
+```{r, out.height="300px"}
+par(mfrow = c(1,4))
+
+plot(y = profit.i, x = accuracy, main = "",
+        ylab = "unit cost",
+        xlab = "accuracy",names = seq(0.2,0.9,0.01),col="royalblue2", cex = 0.9)
+
+plot(y = profit.i, x = seq(0.2,0.9,0.01), main = "",
+        ylab = "unit cost",
+        xlab = "threshold",names = seq(0.2,0.9,0.01),col="royalblue2")
+
+plot(y = profit.i, x = error_rate, main = "",
+        ylab = "unit cost",
+        xlab = "error rate",names = seq(0.2,0.9,0.01),col="royalblue2")
+
+plot(y = profit.i, x = error_important, main = "",
+        ylab = "unit cost",
+        xlab = "false positive rate",names = seq(0.2,0.9,0.01),col="royalblue2")
+```
+
+
+
+```{r, echo = FALSE, include = FALSE}
+### Select the remaining threshold and metrics of evaluation: 
+
+threshold = seq(0.2,0.9,0.01)
+threshold = threshold[which(profit.i == max(profit.i))]
+accuracy = accuracy[which(profit.i == max(profit.i))]
+error_important = error_important[which(profit.i == max(profit.i))]
+error_rate = error_rate[which(profit.i == max(profit.i))]
+
+list(threshold = threshold, accuracy = accuracy, error_important = error_important, error_rate = error_rate)
+```
+
+
+
+```{r, include = FALSE}
+glm_probs = predict(lr.interaction, credit_test, type="response")
+glm_pred = ifelse(glm_probs > 0.7, "1", "0")
+confusionMatrix(data = as.factor(glm_pred), reference = credit_test$RESPONSE)
+```
+
+
+
+
+# Insight and actionability 
+
+```{r message=FALSE, include=FALSE, paged.print=FALSE}
+# Loading the required libraries
+library(readxl)
+library(ggplot2)
+library(MASS)
+library(dbplyr)
+library(corrplot)
+library(readr)
+library(writexl)
+library(gridExtra)
+library(plotly)
+library(rrcov)
+library(factoextra)
+library(plotrix)
+library(tidyverse)
+library(caret)
+library(VGAM)
+library(MLmetrics)
+library(Epi)
+```
+
+
+### Overall Importance & Effects
+
+
+When we attempt to understand what is a good or a bad client. In some contexts, we want to understand what is having the highest impact on the probability of being a bad client (Drivers analysis). On the other side, however, we also want to understand which variables are more informative (Prediction importance analysis, or relevance). It's important to understand the difference, since we address both. 
+
+Additionally, it's also key to understand the difference between direct and overall effect. By direct effect, we refer to the change in the expected probability of being a good client from a change in one of the predictors holding fixed (i.e controlling or having constant) the rest of the information in the model (and in this case, of the dataset, since variable that would bring information are included). General effect measures the same change, but without holding anything fixed. 
+
+For this case, we see that most variables individually have a general effect since the probability of being a good client changes as they do. Most of them have a very predictive power. Account savings, history, the checking account status are variables that in themselves bring relevant significance predictive information.
+
+In the following table, the figure on the left represents the mutiplicative effect on odds from bivariate logistic fit, whereas the right represents the pseudo-fit evaluation with Relative Deviances, where y represents the pseudo-Goodness of Fit (Measure of the Overall Relevance / Predicitive importance). 
+
+```{r include=FALSE}
+credit_sofia = credit
+
+### Loading the data
+credit = read_excel("C:/Users/arpri/OneDrive/Escritorio/libros/master/Segundo Semicuatrimestre/Modelos de Regresión/modelling competition/credit.xls") 
+
+credit$RADIOoTV = credit$`RADIO/TV` 
+credit$`RADIO/TV` = NULL
+credit$COAPPLICANT = credit$`CO-APPLICANT` 
+credit$`CO-APPLICANT` = NULL
+credit$`OBS#` = NULL
+
+numerics = c("DURATION", "AMOUNT", "AGE", "NUM_DEPENDENTS", "NUM_CREDITS")
+factors = credit[, !names(credit) %in% numerics] 
+
+factors = as_tibble(lapply(factors, as.factor)) # Dataset with categorical regresors and response
+numerics = credit[, numerics] # Dataset with Quant regresors
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, height.out="300px"}
+
+x = 0 
+multicategorical = factors 
+for (i in 2:ncol(factors)){
+  if (length(table(factors[, i])) < 3){
+  x = 1 + x
+  multicategorical[, i - (x-1)] = NULL 
+  }
+}
+
+dummies = factors %>%
+  fastDummies::dummy_cols(names(multicategorical), remove_most_frequent_dummy = FALSE, remove_selected_columns = TRUE) %>%
+  select(RESPONSE, everything()) 
+
+names = variable.names(dummies)
+
+yes = no = 0
+effect = upper = lower = rep(0, (ncol(dummies) - 1))
+
+
+for (i in 2:ncol(dummies)){
+  yes = subset(dummies, dummies[, i] == 1)
+  no = subset(dummies, dummies[, i] == 0)
+  se = sqrt((mean(as.numeric(yes$RESPONSE) - 1)*(1 - mean(as.numeric(yes$RESPONSE) - 1))/nrow(yes)) + (mean(as.numeric(no$RESPONSE) - 1)*(1-mean(as.numeric(no$RESPONSE)-1))/nrow(no)))
+  effect[i - 1] = mean(as.numeric(yes$RESPONSE)) - mean(as.numeric(no$RESPONSE))
+  upper[i - 1] = qnorm(0.80, effect[i - 1], se)
+  lower[i - 1] = qnorm(0.20, effect[i - 1], se)
+}
+
+effect = tibble(names = names(dummies[, - 1]), 
+                effect = effect,
+                lower = lower,
+                upper = upper)
+
+a = ggplot(effect, aes(x=names, y=effect)) + 
+  geom_bar(stat = "identity", col="black", alpha=0.9, fill="aquamarine4") + coord_flip() +
+  geom_errorbar(aes(x=names, ymin=lower, ymax= upper), width=0.4, colour="black", size=1.3) +
+    theme_minimal()+ 
+  geom_bar(stat = "identity", col="black", alpha=0.9, fill="aquamarine4") + coord_flip() +
+    theme_minimal() +
+  labs(title="", 
+       y = "Odds ratio",
+       x = "Qualitative Predictor")
+
+fit = rep(0, (ncol(dummies)-1))
+for (i in 2:ncol(dummies)){
+  data = cbind(response = dummies$RESPONSE, predictor = dummies[, i])
+  model = glm(response ~ ., data, family = binomial)
+  fit[i - 1] = 1 - (model$deviance / model$null.deviance)
+}
+
+importance = tibble(names = names(dummies[, - 1]), 
+                fit = fit)
+
+b = ggplot(importance, aes(x=names, y=fit)) + 
+  geom_bar(stat = "identity", col="black", alpha=0.9, fill="aquamarine4") + coord_flip() +
+    theme_minimal() +
+  labs(title="",
+       y = "Pseudo Goodness of Fit",
+       x = "Qualitative Predictor")
+
+X = ggarrange(a, b)
+X
+```
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+
+# Quantitative regresors evaluation
+#numerics
+
+OR = rep(0, (ncol(numerics)))
+
+for (i in 1:ncol(numerics)){
+  data = cbind(response = credit$RESPONSE, predictor = numerics[, i])
+  model = glm(response ~ ., data, family = binomial)
+  OR[i] = exp(summary(model)$coefficients[,1][2])
+}
+
+ORs = tibble(names = names(numerics), OR = OR)
+
+a = ggplot(ORs, aes(x=names, y=OR)) + 
+  geom_bar(stat = "identity", col="black", alpha=0.9, fill="grey") + coord_flip() +
+    theme_minimal() +
+  labs(title="Odds Ratios for quantitative variables", 
+       y = "Odds Ratios for quantitative variables",
+       x = "Quantitative Predictor") +
+       geom_hline(aes(yintercept = 1)) 
+
+
+fit = rep(0, ncol(numerics))
+for (i in 1:ncol(numerics)){
+  data = cbind(response = credit$RESPONSE, predictor = numerics[, i])
+  model = glm(response ~ ., data, family = binomial)
+  fit[i] = 1 - (model$deviance / model$null.deviance)
+}
+
+importance = tibble(names = names(numerics), 
+                fit = fit)
+
+b = ggplot(importance, aes(x=names, y=fit)) + 
+  geom_bar(stat = "identity", col="black", alpha=0.9, fill="aquamarine4") + coord_flip() +
+    theme_minimal() +
+  labs(title="Pseudo-fit evaluation with Relative Deviances", 
+       y = "Pseudo Goodness of Fit",
+       x = "Qualitative Predictor")
+
+
+# Linear impact comparison: Why linear because if we're going to assume something we don't know (LIke the ffect) let's make it linear # To show the linear approximation of the effects, that's it. 
+
+Y = ggarrange(a, b)
+Y
+
+```
+
+With regards to the quantitative variables, we see that duration carries information about the probability of being or not a good client. In this case it has a negative impact since the odds of being a good client are lower as the duration of the credit increases. This is particularly interesting because the shorter the time, the more difficult is to pay back. It's absolutely unwise to compare the magnitude of the odds ratio since they are measured in different metrics and have different variance. For example, the number of dependents and credits take basically 1-3 values. Meaning that even though the beta is very big, we could not say it has a big impact compared to the rest of quantitative variables. In the case of the number of dependents, we see that this variable is not relevant at all. 
+
+
+### Direct Effect
+
+The chart below shows the model in linear form for interpretability (the linear approximation to the bX form in log(p/(1-p)) = bX). This model gives insight into the predictive odds ratio in the situation of holding constant the other factors. The effect of collinearity and low variability of specific dummies is reflected (this is not assessed explicitly), which unfolds in a very high variation of the coefficients. 
+
+This model emphasizes the direct effect of the account savings, the history of the client, the checking account status and also the duration and amount of credit, which have a significant negative impact on the probability of being a good client. What's interesting here, is that the purpose of the credit also gives us an important key driver, since, when the purpose is to buy a new car, we see an important negative effect. 
+
+
+```{r echo=FALSE}
+
+# We use this model for interpretation 
+
+cofint = exp(confint(lr.stepAIC))[2:length(lr.stepAIC$coefficients),]
+
+importance = tibble(
+                names = names(lr.stepAIC$coefficients)[2:length(lr.stepAIC$coefficients)], 
+                effect = exp(lr.stepAIC$coefficients)[2:length(lr.stepAIC$coefficients)],
+                lower = cofint[,1],
+                upper =  cofint[,2])
+
+ggplot(importance, aes(x=names, y=effect)) + 
+  geom_bar(stat = "identity", col="black", alpha=0.9, fill="aquamarine4") + coord_flip() +
+  geom_errorbar(aes(x=names, ymin=lower, ymax= upper), width=0.4, colour="black", size=1) +
+    theme_minimal() + ylim(0, 26) +
+       geom_hline(aes(yintercept = 1), color = "red") +
+  labs(title="Odds Ratios controlling for other predictors", 
+       caption="R que R - Regression Models - 
+       UC3M- Jan 2021", 
+       y = "Odds ratio estimated from logistic linear model regression",
+       x = "Features") 
+
+```
+
+Therefore, based on this, among the categorical variables, we consider the not having a credit account to be the most important information to have of a client. Among the quantitative variables, even though it becomes less important as we include variables in the model, under the linearity assumption duration carries more information about the response than the amount of credit.
+
+
+### Profiles 
+
+In order to define the profiles, the model LR with interactions has been used, and the data has been predicted using it. We have defined three groups, according to the probabilities obtained in this prediction. A client will have a low risk of being bad, if he/she the response is above 0.75. If the response of the fitted values is between 0.75 and 0.25, that person will be classified as a medium risk. By last, if it is lower than 0.25, the classification will be high risk of being a bad client. Using these categories, the following spider charts have been obtained, which give an informative view of the different profiles of clients.  
+
+```{r, out.width="1200px", echo=FALSE}
+
+#par(mfrow=c(1,2), mai = c(0.1, 0.01, 0.1, 0.01))
+
+lr.interaction = glm(finalformula_reduced, family = binomial, credit)
+
+prediction = predict(lr.interaction, newdata = credit, type="response")
+group = lrProb * 0
+
+for (i in 1:nrow(credit)){
+  if(prediction[i] >= 0.75){
+    group[i] = "Low risk"
+  }else if (prediction[i] >= 0.25){
+    group[i] = "Medium risk"
+  }else{
+    group[i] = "High risk"
+  }
+}
+
+purpose = cbind(credit, group) %>%
+     dplyr::filter(group == "High risk") %>%
+     dplyr::select(NEW_CAR, USED_CAR, FURNITURE, RADIOoTV, EDUCATION, RETRAINING) 
+
+purpose2 = cbind(credit, group) %>%
+     dplyr::filter(group == "Low risk") %>%
+     dplyr::select(NEW_CAR, USED_CAR, FURNITURE, RADIOoTV, EDUCATION, RETRAINING) 
+
+
+purpose3 = cbind(credit, group) %>%
+     dplyr::filter(group == "Medium risk") %>%
+     dplyr::select(NEW_CAR, USED_CAR, FURNITURE, RADIOoTV, EDUCATION, RETRAINING) 
+
+
+hr = apply(purpose, 2, function(x){mean(as.numeric(x))})
+
+mr = apply(purpose3, 2, function(x){mean(as.numeric(x))})
+
+lr = apply(purpose2, 2, function(x){mean(as.numeric(x))})
+
+r = as.data.frame(rbind(lr, mr, hr))
+
+rownames(r) = c("low risk", "Medium risk", "high risk")
+
+data <- rbind(rep(0.75,7) , rep(0,7) , r)
+
+colors_border=c( rgb(0.2,0.5,0.5,0.9), rgb(0.8,0.2,0.5,0.9) , rgb(0.7,0.5,0.1,0.9) )
+colors_in=c( rgb(0.2,0.5,0.5,0.9), rgb(0.8,0.2,0.5,0.4) , rgb(0.7,0.5,0.1,0.4) )
+
+radarchart(data, axistype=1 , 
+    #custom polygon
+    pcol=colors_border , pfcol=colors_in , plwd=2 , plty=1,
+    #custom the grid
+    cglcol="grey", cglty=1, axislabcol="grey", caxislabels=seq(0, 1, 0.2), cglwd=0.8,
+    #custom labels
+    vlcex=0.8)
+
+legend(x=1, y=1.4, legend = rownames(data[-c(1,2),]), bty = "n", pch=20 , col=colors_in , text.col = "grey", cex=1.2, pt.cex=2)
+title("By Credit purpose")
+
+#### Financial Situation: 
+
+
+### Financial Situation  
+
+purpose = cbind(credit, group) %>%
+     mutate(CHK_ACCT = as.factor(CHK_ACCT)) %>%
+     dplyr::filter(group == "High risk") %>%
+     dplyr::select(GUARANTOR, REAL_ESTATE, OTHER_INSTALL, RENT, CHK_ACCT, HISTORY) %>%
+     fastDummies::dummy_cols(c("CHK_ACCT", "HISTORY"), remove_most_frequent_dummy = FALSE, remove_selected_columns = TRUE)
+
+purpose2 = cbind(credit, group) %>%
+     dplyr::filter(group == "Low risk") %>%
+     dplyr::select(GUARANTOR, REAL_ESTATE, OTHER_INSTALL, RENT, CHK_ACCT, HISTORY) %>%
+     fastDummies::dummy_cols(c("CHK_ACCT", "HISTORY"), remove_most_frequent_dummy = FALSE, remove_selected_columns = TRUE)
+
+purpose3 = cbind(credit, group) %>%
+     dplyr::filter(group == "Medium risk") %>%
+     dplyr::select(GUARANTOR, REAL_ESTATE, OTHER_INSTALL, RENT, CHK_ACCT, HISTORY) %>%
+     fastDummies::dummy_cols(c("CHK_ACCT", "HISTORY"), remove_most_frequent_dummy = FALSE, remove_selected_columns = TRUE)
+
+
+hr = apply(purpose, 2, function(x){mean(as.numeric(x))})
+
+mr = apply(purpose3, 2, function(x){mean(as.numeric(x))})
+
+lr = apply(purpose2, 2, function(x){mean(as.numeric(x))})
+
+r = as.data.frame(rbind(lr, mr, hr))
+
+rownames(r) = c("low risk", "Medium risk", "high risk")
+
+data <- rbind(rep(0.75,7) , rep(0,7) , r)
+
+colors_border=c( rgb(0.2,0.5,0.5,0.9), rgb(0.8,0.2,0.5,0.9) , rgb(0.7,0.5,0.1,0.9) )
+colors_in=c( rgb(0.2,0.5,0.5,0.9), rgb(0.8,0.2,0.5,0.4) , rgb(0.7,0.5,0.1,0.4) )
+
+radarchart(data, axistype=1 , 
+    #custom polygon
+    pcol=colors_border , pfcol=colors_in , plwd=2 , plty=1,
+    #custom the grid
+    cglcol="grey", cglty=1, axislabcol="grey", caxislabels=seq(0, 1, 0.2), cglwd=0.8,
+    #custom labels
+    vlcex=0.8)
+
+legend(x=1.2, y=1.4, legend = rownames(data[-c(1,2),]), bty = "n", pch=20 , col=colors_in , text.col = "grey", cex=1.2, pt.cex=2)
+title("By Financial information")
+
+```
+
+
+```{r echo=FALSE, include = FALSE}
+
+x = 0 
+multicategorical = factors 
+for (i in 2:ncol(factors)){
+  if (length(table(factors[, i])) < 3){
+  x = 1 + x
+  multicategorical[, i - (x-1)] = NULL 
+  }
+}
+
+dummies = cbind(credit, group) %>%
+  fastDummies::dummy_cols(names(multicategorical), remove_most_frequent_dummy = FALSE, remove_selected_columns = TRUE) %>%
+  select(RESPONSE, everything()) 
+
+purpose = dummies %>%
+     dplyr::filter(group == "High risk")
+
+purpose2 = dummies %>%
+     dplyr::filter(group == "Low risk")
+
+purpose3 = dummies %>%
+     dplyr::filter(group == "Medium risk")
+
+
+hr = apply(purpose, 2, function(x){mean(as.numeric(x))})
+
+mr = apply(purpose3, 2, function(x){mean(as.numeric(x))})
+
+lr = apply(purpose2, 2, function(x){mean(as.numeric(x))})
+
+r = as.data.frame(rbind(lr, mr, hr))
+
+print("change in mean/proportion across risk groups")
+r
+```
+
+From the particularities of the risk groups, first of all, people with high risk are involved in more credits for new cars compared to others, while we see something rather opposite for used cars and TVs. With regards to the financial information, low-risk clients (75%+ probability of being good clients), tend to have a critical account, and account with more money. On the other hand we have the opposite for high risk clients, with checking account with less money (lower immediate liquidity) and tend to rent. By last, although this is not included in the chart above, there's a higher percentage of foreigners among low risk applicants. 
+
+Some of these conclusions can be directly obtained by looking at the bar plots in the multivariate analysis, where we can see, for instance, that those people who are foreign are mostly good clients. 
+
+# Conclusions 
+
+As main conclusion, we want to highlight the importance of the cost matrix in this project, since it gives a meaning to the selection of the threshold. The final model do not need to be the best one in terms of AUC, but in terms of maximizing the bank profits, as in this case. Furthermore, it is also important to highlight the feature selection to obtain the smaller, but significant, model, since some of the data with which we are working are difficult to obtain. It has also been a drawback the fact that the sample size was maybe too small to consider all the interaction terms that would be interesting to select. In general, the false positive error rate is quite small, being lower than the 10% for the testing set, which is a surprising result taking into account the reduced set of variables we were considering. 
+
+By last, the variables that give a higher relevant significant predictive information were account savings, history,  checking account status, duration and amount, which, moreover, present a significant negative impact on the probability of being a good client. As for the profiles, we could see that the high risk clients, in general, tend to ask for credits for new cars or to rent a property, and they tend not to have as much money in their bank account. 
+
+
+
+
